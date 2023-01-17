@@ -21,7 +21,7 @@ def __run_command(command):
   streamdata = proc.communicate()[0]
   return proc.returncode
 
-def run(projectName, compdb):
+def run(projectName, compdb, srcRoot):
   script_path = os.path.dirname(__file__)
   root_path =  rexpy.util.find_root()
 
@@ -36,7 +36,7 @@ def run(projectName, compdb):
     raise Exception("clang-tidy auto fixes failed")
 
   rexpy.diagnostics.log_info("Running clang-format")
-  rc = __run_command(f"py {script_path}/run_clang_format.py --clang-format-executable={clang_format_path} -r -i {root_path}/source/{projectName}")
+  rc = __run_command(f"py {script_path}/run_clang_format.py --clang-format-executable={clang_format_path} -r -i {srcRoot}")
 
   if rc != 0:
     raise Exception("clang-format failed")
@@ -47,13 +47,15 @@ if __name__ == "__main__":
 
   parser.add_argument("-p", "--project", help="project name")
   parser.add_argument("-compdb", help="compiler database folder")
+  parser.add_argument("-srcroot", help="src root folder")
+  
   args, unknown = parser.parse_known_args()
 
  # useful for debugging
   rexpy.diagnostics.log_info(f"Executing {__file__}")
 
  # execute the script
-  run(args.project, args.compdb)
+  run(args.project, args.compdb, args.srcroot)
 
  # print. We're done.
   rexpy.diagnostics.log_info("Done.")
