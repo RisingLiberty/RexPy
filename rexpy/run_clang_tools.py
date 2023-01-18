@@ -28,9 +28,10 @@ def run(projectName, compdb, srcRoot):
   clang_tidy_path = rexpy.required_tools.tool_paths_dict["clang_tidy_path"]
   clang_format_path = rexpy.required_tools.tool_paths_dict["clang_format_path"]
   clang_apply_replacements_path = rexpy.required_tools.tool_paths_dict["clang_apply_replacements_path"]
+  clang_config_file = rexpy.util.find_in_parent(srcRoot, ".clang-tidy_first_pass")
 
   rexpy.diagnostics.log_info("Running clang-tidy - auto fixes")
-  rc = __run_command(f"py {script_path}/run_clang_tidy.py -clang-tidy-binary={clang_tidy_path} -clang-apply-replacements-binary={clang_apply_replacements_path} -config-file={root_path}/source/.clang-tidy_first_pass -p={compdb} -header-filter=.* -quiet") # force clang compiler, as clang-tools expect it
+  rc = __run_command(f"py {script_path}/run_clang_tidy.py -clang-tidy-binary={clang_tidy_path} -clang-apply-replacements-binary={clang_apply_replacements_path} -config-file={clang_config_file} -p={compdb} -header-filter=.* -quiet") # force clang compiler, as clang-tools expect it
 
   if rc != 0:
     raise Exception("clang-tidy auto fixes failed")
