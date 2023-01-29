@@ -7,4 +7,4 @@ def new_build(ninjaFile, shouldClean):
   if shouldClean:
     os.system(f"{ninja_path} -f {ninjaFile} -t clean")
 
-  os.system(f"{ninja_path} -f {ninjaFile}")
+  return os.system(f"{ninja_path} -f {ninjaFile}")
