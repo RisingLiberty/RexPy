@@ -19,7 +19,7 @@ def run(shouldClean):
   if shouldClean:
     __clean_intermediate()
       
-  rexpy.required_tools.run()
+  rexpy.required_tools.run(False)
   rexpy.required_libs.run()
       
 if __name__ == "__main__":
