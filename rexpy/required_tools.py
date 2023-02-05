@@ -8,6 +8,7 @@ import requests
 import zipfile 
 import shutil
 import threading
+import argparse
 
 from pathlib import Path
 
@@ -45,8 +46,11 @@ def __get_tool_extension(tool):
 
   return extension
 
-def __look_for_tools(required_tools):
-  paths = rexpy.util.env_paths()
+def __look_for_tools(required_tools, use_env):
+  paths = []
+  if use_env:
+    paths.append(rexpy.util.env_paths())
+    
   for required_tool in required_tools:
     stem = required_tool["stem"]
     config_name = required_tool["config_name"]
@@ -80,7 +84,7 @@ def __look_for_tools(required_tools):
 
   return not_found_tools
 
-def are_installed():
+def are_installed(use_env : bool):
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("Checking if tools are installed")
 
   global required_tools
@@ -91,7 +95,7 @@ def are_installed():
     tool_paths_dict = {}
     
   global not_found_tools
-  not_found_tools = __look_for_tools(required_tools)
+  not_found_tools = __look_for_tools(required_tools, use_env)
 
   if len(not_found_tools) == 0:
     rexpy.diagnostics.log_info("All tools found")
@@ -222,11 +226,15 @@ def install():
   # save cached paths to disk
   rexpy.rex_json.save_file(tool_paths_filepath, tool_paths_dict)
 
-def run():
-  if not are_installed():
+def run(use_env : bool):
+  if not are_installed(use_env):
     download()
     install()
 
 if __name__ == "__main__":
-  run()
+  parser = argparse.ArgumentParser()
+  parser.add_argument("-use_env", help="use env paths to look for tools", action="store_true")
+  args, unknown = parser.parse_known_args()
+
+  run(args.use_env)
 
