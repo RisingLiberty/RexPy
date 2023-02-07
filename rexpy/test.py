@@ -88,7 +88,7 @@ def __run_clang_tidy():
     clang_tidy_path = tool_paths_dict["clang_tidy_path"]
     clang_apply_replacements_path = tool_paths_dict["clang_apply_replacements_path"]
     compiler_db_folder = Path(compiler_db).parent
-    config_file_path = f"{root_path}/source/.clang-tidy_second_pass"
+    config_file_path = f"{compiler_db_folder}/.clang-tidy_second_pass"
 
     cmd = f"py {script_path}/run_clang_tidy.py"
     cmd += f" -clang-tidy-binary={clang_tidy_path}"
