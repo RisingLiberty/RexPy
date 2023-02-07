@@ -19,11 +19,16 @@ import shutil
 import filelock
 import psutil
 import time
+import pathlib
 
 clang_tidy_first_pass_filename = ".clang-tidy_first_pass"
 clang_tidy_second_pass_filename = ".clang-tidy_second_pass"
 clang_tidy_format_filename = ".clang-format"
-processes_in_flight_filename = "post_builds_in_flight.txt"
+root = rexpy.util.find_root()
+settings = rexpy.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+intermediate_folder = settings["intermediate_folder"]
+build_folder = settings["build_folder"]
+processes_in_flight_filename = os.path.join(root, intermediate_folder, build_folder, "ninja", "post_builds_in_flight.tmp")
 project = ""
 
 def __run_command(command):
@@ -44,6 +49,13 @@ def __copy_clang_config_files(targetDir, srcRoot):
   shutil.copy(clang_tidy_secondpass_config_src_path, clang_tidy_secondpass_config_dst_path)
   shutil.copy(clang_format_config_src_path, clang_format_config_dst_path)
 
+def __create_clangtool_project_file(targetDir, projectName):
+  # the files doesn't need to contain anything, it just needs to be there
+  filepath = os.path.join(targetDir, f"{projectName}.project")
+  with open(filepath, "w") as f:
+    f.truncate()
+    f.write(projectName)
+
 def __is_post_build_in_flight(projects, ourProject):
   for project in projects:
     if ourProject in project:
@@ -61,7 +73,7 @@ def __wait_for_clang_tools_to_unlock():
     # load all projects a post build command is currently in flight for
     # we need to keep the lock while scanning to avoid data races
     is_in_flight = False
-    with open(processes_in_flight_filename, "r+") as f: 
+    with open(processes_in_flight_filename, "w+") as f: 
       lines : list[str] = f.readlines()
       is_in_flight = __is_post_build_in_flight(lines, project)
           
@@ -119,6 +131,7 @@ def run(projectName, compdb, srcRoot):
   project = projectName
 
   __copy_clang_config_files(compdb, srcRoot)
+  __create_clangtool_project_file(compdb, pathlib.Path(srcRoot).name)
 
   clang_tidy_path = rexpy.required_tools.tool_paths_dict["clang_tidy_path"]
   clang_format_path = rexpy.required_tools.tool_paths_dict["clang_format_path"]

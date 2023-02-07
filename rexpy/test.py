@@ -76,6 +76,18 @@ def __run_include_what_you_use(fixIncludes = False):
 
   return 0
 
+# the compdbPath directory contains all the files needed to configure clang tools
+# this includes the compiler databse, clang tidy config files, clang format config files
+# and a custom generated project file (in run_clang_tools.py), which should have the same filename as the source root directory
+# of the project you're testing
+def __get_project_name(compdbPath):
+  dirs = os.listdir(compdbPath)
+  for dir in dirs:
+    if ".project" in dir:
+      return dir.split(".")[0]
+  
+  return ""
+
 def __run_clang_tidy():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running clang-tidy")
 
@@ -90,12 +102,14 @@ def __run_clang_tidy():
     compiler_db_folder = Path(compiler_db).parent
     config_file_path = f"{compiler_db_folder}/.clang-tidy_second_pass"
 
+    project_name = __get_project_name(compiler_db_folder)
+    
     cmd = f"py {script_path}/run_clang_tidy.py"
     cmd += f" -clang-tidy-binary={clang_tidy_path}"
     cmd += f" -clang-apply-replacements-binary={clang_apply_replacements_path}"
     cmd += f" -config-file={config_file_path}"
     cmd += f" -p={compiler_db_folder}"
-    cmd += f" -header-filter=.*"
+    cmd += f" -header-filter={project_name}" # only care about headers of the current project
     cmd += f" -quiet"
 
     proc = rexpy.util.run_subprocess_with_callback(cmd, __default_output_callback)
