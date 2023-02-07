@@ -3,6 +3,7 @@ import subprocess
 import os
 import psutil
 import filelock
+import sys
 import rexpy.util
 import rexpy.rex_json
 
@@ -96,5 +97,6 @@ if __name__ == "__main__":
   ninja_file = args.file
   ninja_build = args.build
 
-  run(ninja_exe, ninja_file, ninja_build)
+  res = run(ninja_exe, ninja_file, ninja_build)
+  sys.exit(res)
 
