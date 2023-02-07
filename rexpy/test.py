@@ -103,13 +103,15 @@ def __run_clang_tidy():
     config_file_path = f"{compiler_db_folder}/.clang-tidy_second_pass"
 
     project_name = __get_project_name(compiler_db_folder)
-    
+    header_filters = rexpy.util.retrieve_header_filters(compiler_db_folder, project_name)
+    header_filters_regex = rexpy.util.create_header_filter_regex(header_filters)
+
     cmd = f"py {script_path}/run_clang_tidy.py"
     cmd += f" -clang-tidy-binary={clang_tidy_path}"
     cmd += f" -clang-apply-replacements-binary={clang_apply_replacements_path}"
     cmd += f" -config-file={config_file_path}"
     cmd += f" -p={compiler_db_folder}"
-    cmd += f" -header-filter={project_name}" # only care about headers of the current project
+    cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
     cmd += f" -quiet"
 
     proc = rexpy.util.run_subprocess_with_callback(cmd, __default_output_callback)

@@ -2,11 +2,32 @@ import os
 import subprocess
 from pathlib import Path
 import diagnostics
+import rexpy.rex_json
 
 def env_paths():
   envPath = os.environ["PATH"]
   paths = envPath.split(os.pathsep)
   return paths
+
+def retrieve_header_filters(targetDir, projectName):
+  filepath = os.path.join(targetDir, f"{projectName}.project")
+
+  if not os.path.exists(filepath):
+    raise Exception(f"clang tools project file doesn't exist, please check your sharpmake scripts: {filepath}")
+
+  jsonBlob = rexpy.rex_json.load_file(filepath)
+  return jsonBlob["HeaderFilters"]
+
+def create_header_filter_regex(headerFilters : list[str]):
+  res = ""
+
+  for filter in headerFilters:
+    res += "("
+    res += filter
+    res += ")|"
+
+  res = res.removesuffix("|")
+  return res
 
 def find_file_in_folder(file, path : str):
   fileToFind = file.lower()

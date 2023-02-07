@@ -14,7 +14,7 @@ import subprocess
 import rexpy.diagnostics
 import rexpy.util
 import rexpy.required_tools
-import rexpy.diagnostics
+import rexpy.rex_json
 import shutil
 import filelock
 import psutil
@@ -48,13 +48,6 @@ def __copy_clang_config_files(targetDir, srcRoot):
   shutil.copy(clang_tidy_firstpass_config_src_path, clang_tidy_firstpass_config_dst_path)
   shutil.copy(clang_tidy_secondpass_config_src_path, clang_tidy_secondpass_config_dst_path)
   shutil.copy(clang_format_config_src_path, clang_format_config_dst_path)
-
-def __create_clangtool_project_file(targetDir, projectName):
-  # the files doesn't need to contain anything, it just needs to be there
-  filepath = os.path.join(targetDir, f"{projectName}.project")
-  with open(filepath, "w") as f:
-    f.truncate()
-    f.write(projectName)
 
 def __is_post_build_in_flight(projects, ourProject):
   for project in projects:
@@ -131,7 +124,8 @@ def run(projectName, compdb, srcRoot):
   project = projectName
 
   __copy_clang_config_files(compdb, srcRoot)
-  __create_clangtool_project_file(compdb, pathlib.Path(srcRoot).name)
+  headerFilters = rexpy.util.retrieve_header_filters(compdb, project)
+  headerFiltersRegex = rexpy.util.create_header_filter_regex(headerFilters)
 
   clang_tidy_path = rexpy.required_tools.tool_paths_dict["clang_tidy_path"]
   clang_format_path = rexpy.required_tools.tool_paths_dict["clang_format_path"]
@@ -147,7 +141,7 @@ def run(projectName, compdb, srcRoot):
   locker = Scopeguard(__unlock_clang_tools)
 
   rexpy.diagnostics.log_info("Running clang-tidy - auto fixes")
-  rc = __run_command(f"py {script_path}/run_clang_tidy.py -clang-tidy-binary={clang_tidy_path} -clang-apply-replacements-binary={clang_apply_replacements_path} -config-file={clang_config_file} -p={compdb} -header-filter=.* -quiet -fix") # force clang compiler, as clang-tools expect it
+  rc = __run_command(f"py {script_path}/run_clang_tidy.py -clang-tidy-binary={clang_tidy_path} -clang-apply-replacements-binary={clang_apply_replacements_path} -config-file={clang_config_file} -p={compdb} -header-filter={headerFiltersRegex} -quiet -fix") # force clang compiler, as clang-tools expect it
 
   if rc != 0:
     raise Exception("clang-tidy auto fixes failed")
