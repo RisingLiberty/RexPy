@@ -57,27 +57,19 @@ def __is_post_build_in_flight(projects, ourProject):
   return False
 
 def __wait_for_clang_tools_to_unlock():
-  start_tries = 50
+  start_tries = 10000
   tries = start_tries
 
   while tries > 0:
     lock = filelock.FileLock(f"{processes_in_flight_filename}.lock")
 
-    # load all projects a post build command is currently in flight for
-    # we need to keep the lock while scanning to avoid data races
-    is_in_flight = False
-    with open(processes_in_flight_filename, "w+") as f: 
-      lines : list[str] = f.readlines()
-      is_in_flight = __is_post_build_in_flight(lines, project)
-          
-    # if not, exit the loop, we can launch a new one
-    if not is_in_flight:
+    # if the file doesn't exist, no builds are in flight
+    if not os.path.exists(processes_in_flight_filename):
       return
-
 
     print(f"[clang tools] waiting for clang tools to unlock for {project}")
     tries -= 1
-    time.sleep(30)
+    time.sleep(10)
 
   raise Exception(f"Failed to start run_clang_tools.py after {start_tries} tries")
 
@@ -98,19 +90,9 @@ def __unlock_clang_tools():
 
   print(f"[clang tools] unlocking clang tools for {project}")
 
-  # read in all the lines first
   lock = filelock.FileLock(f"{processes_in_flight_filename}.lock")
-  with open(processes_in_flight_filename, "r") as fp:
-    lines = fp.readlines()
-
-  # only write back the lines that don't include the project
-  with open(processes_in_flight_filename, "w") as fp:
-    for line in lines:
-        if project not in line:
-            fp.write(line)
-
-  lock.release()
-
+  os.remove(processes_in_flight_filename)
+  
 class Scopeguard:
   def __init__(self, callback):
     self.callback = callback
