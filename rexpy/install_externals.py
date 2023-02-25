@@ -5,6 +5,10 @@ import zipfile
 import shutil
 from enum import Enum
 
+import rexpy.diagnostics
+import rexpy.util
+import rexpy.rex_json
+
 class Host(Enum):
     UNKNOWN = 0
     GITLAB = 1
@@ -12,11 +16,6 @@ class Host(Enum):
 
 def __get_script_path():
     return os.path.dirname(os.path.realpath(__file__))
-def __get_root_path():
-    root = __get_script_path()
-    root = os.path.join(root, os.path.join("..", ".."))
-
-    return root
 
 def __get_host(path):
     if "gitlab" in path:
@@ -24,7 +23,7 @@ def __get_host(path):
     elif "github" in path:
         return Host.GITHUB
     
-    print("Unknown host!")
+    rexpy.diagnostics.log_info("Unknown host!")
     return Host.UNKNOWN
 
 def __build_gitlab_path(baseUrl, name, tag):
@@ -43,29 +42,20 @@ def __build_github_path(baseUrl, tag):
     return url
 def __build_host_path(baseUrl, name, tag):
     host = __get_host(baseUrl)
-    match host:
-        case Host.GITHUB:
-            return __build_github_path(baseUrl, tag)
-        case Host.GITLAB:
-            return __build_gitlab_path(baseUrl, name, tag)
-        case Host.UNKNOWN:
-            return ""
-
-def __load_json(path):
-  if not os.path.exists(path):
-    print("Failed to load json, file does not exist: " + path)
-    return None
-
-  f = open(path)
-  data = json.load(f)
-  return data
+    if host == Host.GITHUB:
+        return __build_github_path(baseUrl, tag)
+    elif host == Host.GITLAB:
+        return __build_gitlab_path(baseUrl, name, tag)
+    else:
+        rexpy.diagnostics.log_err(f"Unknown url host: {host} in url: {baseUrl}")
+        return ""
 
 def __load_externals_required():
-    root = __get_root_path()
+    root = rexpy.util.find_root()
 
-    json_blob = __load_json(os.path.join(root, "build", "config", "required_externals.json"))
+    json_blob = rexpy.rex_json.load_file(os.path.join(root, "build", "config", "required_externals.json"))
     if json_blob == None:
-        print("Loaded json blob is None, stopping json parse")
+        rexpy.diagnostics.log_err("Loaded json blob is None, stopping json parse")
         return []
 
     externals_required = []
@@ -78,6 +68,8 @@ def __download_external(url):
     # get basename of the URL (a.k.a. the filename + extention we would like to download)
     url_basename = os.path.basename(url)
 
+    rexpy.diagnostics.log_info(f"downloading from: {url}")
+
     # request a download of the given URL
     if not os.path.exists(url_basename):
         response = requests.get(url)
@@ -86,41 +78,39 @@ def __download_external(url):
             open(url_basename, "wb").write(response.content)
         else:
             # bad request was made
-            print("Bad request [" + str(response.status_code) + "] for given url: " + url)
+            rexpy.diagnostics.log_err(f"Bad request [{str(response.status_code)}] for given url: {url}")
             return 1
         
     # extract the zip file on disk
     # we cache the files within the directory before 
     # and after extraction, this gives us the ability
     # to examine the added files within the directory
-    print("Extracting: " + url)
+    rexpy.diagnostics.log_info("Extracting: " + url)
     
     # pre list directories
     # cached directories before we downloaded anything
     pre_list_dir = os.listdir(__get_script_path())
-    # print("pre-list-dir: " + " ".join(pre_list_dir))
     with zipfile.ZipFile(url_basename,"r") as zip_ref:
         zip_ref.extractall(__get_script_path())
 
     # post list directories
     # directories after we downloaded the repository
     post_list_dir = os.listdir(__get_script_path())
-    # print("post-list-dir: " + " ".join(post_list_dir))
 
-    print("Looking for added extracted directories ...")
+    rexpy.diagnostics.log_info("Looking for added extracted directories ...")
     added_directory_names = []
     for post_dir in post_list_dir:
         count = pre_list_dir.count(post_dir)
         if count == 0:
             added_directory_names.append(post_dir)
-    print("Found (" + str(len(added_directory_names)) + "): " + " ".join(added_directory_names))
+    rexpy.diagnostics.log_info(f"Found ({str(len(added_directory_names))}): ".join(added_directory_names))
 
     # remove the created zip file
     os.remove(url_basename)
 
     return added_directory_names
 
-def __touch_externals_dir(externalsDir, tag):
+def __create_version_file(externalsDir, tag):
     version = {
         "tag": tag
     }
@@ -131,9 +121,30 @@ def __touch_externals_dir(externalsDir, tag):
     with open(os.path.join(externalsDir, "version.json"), "w") as out:
         out.write(json_object)
 
+def __verify_external(externalPath, requiredTag):
+    external_name = os.path.basename(externalPath)
+
+    if os.path.exists(externalPath):
+        rexpy.diagnostics.log_info(f"External found: {external_name} validating version ...")
+        version_file = os.path.join(externalPath, "version.json")
+        if os.path.exists(version_file):
+            version_data = rexpy.rex_json.load_file(version_file)           
+            if version_data == None:
+                rexpy.diagnostics.log_err(f"Invalid version data found, redownloading external: {external_name}")
+                return False             
+            if not version_data["tag"] == requiredTag:
+                return False
+            else:
+                rexpy.diagnostics.log_info(f"External: {external_name} is up to date ({external_name}{requiredTag})")
+        else:
+            rexpy.diagnostics.log_err(f"No version file found for {external_name}")
+            return False
+
+    else:
+        return False
+
 def __install_external(external):
-    cwd = os.getcwd()
-    root = __get_root_path()
+    root = rexpy.util.find_root()
 
     external_url = external["url"]
     external_name = external["name"]
@@ -141,41 +152,24 @@ def __install_external(external):
     external_store = external["storage"]
     external_store = external_store.replace("~", root)
 
-    # if the external is already present we need to check if we need to redownload anything
-    should_download = False
     externals_dir = os.path.join(external_store, external_name)
-    if os.path.exists(externals_dir):
-        print("External found: " + external_name + " validating version ...")
-        os.chdir(externals_dir)
-        version_file = os.path.join(externals_dir, "version.json")
-        if os.path.exists(version_file):
-            version_data = __load_json(version_file)           
-            if version_data == None:
-                print("Invalid version data found, redownloading external: " + external_name)
-                should_download = True              
-            if not version_data["tag"] == external_tag:
-                should_download = True
-            else:
-                print("External: " + external_name + " is up to date (" + external_name + " " + external_tag + ")")
-        else:
-            should_download = True
-        os.chdir(cwd)
 
+    # if the external is already present we need to check if we need to redownload anything
+    valid_external = __verify_external(externals_dir, external_tag)
+    if not valid_external:    
         # any data that was already available will be deleted 
         # the data will be out of date anyway when a download is triggered
-        if should_download:
+        if os.path.exists(externals_dir):
             shutil.rmtree(externals_dir)
-    else:
-        should_download = True
 
-    if should_download:    
         url = __build_host_path(external_url, external_name, external_tag)
-        
-        added_directories = __download_external(url)       
+        added_directories = __download_external(url)     
+
         if len(added_directories) == 1:
             # move to output directory
             shutil.move(os.path.join(__get_script_path(), added_directories[0]), os.path.join(external_store, added_directories[0]))
             # change directory name
+            cwd = os.getcwd()
             os.chdir(external_store)
             os.rename(added_directories[0], external_name)
             os.chdir(cwd)
@@ -187,21 +181,18 @@ def __install_external(external):
             for added_directory in added_directories:
                 shutil.move(os.path.join(__get_script_path(), added_directory), externals_dir)
         else:
-            print("No directories where extracted.")
+            rexpy.diagnostics.log_err("No directories where extracted.")
             return
 
-        __touch_externals_dir(externals_dir, external_tag)   
+        __create_version_file(externals_dir, external_tag)   
 
-def __main():
-    print("Start installing externals ...")
+def run():
+    rexpy.diagnostics.log_info("Start installing externals ...")
 
     externals_required = __load_externals_required()
     if externals_required == None:
-        print("Required externals is None, exiting ...")
+        rexpy.diagnostics.log_err("Required externals is None, exiting ...")
         return
 
     for external in externals_required:
         __install_external(external)    
-
-if __name__ == "__main__":
-    __main()

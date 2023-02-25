@@ -1,3 +1,5 @@
+echo off
+
 pushd %~dp0
 
 rmdir /S /Q dist
