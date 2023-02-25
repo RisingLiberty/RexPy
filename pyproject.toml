@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling", "requests", "termcolor", "psutil", "filelock"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rexpy"
+version = "0.0.1"
+authors = [
+  { name="Nick De Breuck", email="nick.debreuck@outlook.com" },
+]
+description = "python framework used by Rex Engine"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/RisingLiberty/RexPy"
+"Bug Tracker" = "https://github.com/RisingLiberty/RexPy/issues"
