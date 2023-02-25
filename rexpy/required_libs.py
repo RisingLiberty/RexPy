@@ -173,7 +173,7 @@ def __look_for_required_libs(required_libs):
 
 # checks all paths of the required libs, making sure all of them are installed
 # if they're not installed, it'll flag a required_lib as not fully installed
-def are_installed():
+def __are_installed():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("Checking if libs are installed")
 
   global required_libs
@@ -188,7 +188,7 @@ def are_installed():
   
   return len(not_found_libs) == 0
 
-def download():
+def __download():
   # create the temporary path for zips
   if not os.path.exists(zip_downloads_path):
       os.makedirs(zip_downloads_path)
@@ -213,7 +213,7 @@ def download():
   # remove it after all libs have been downloaded
   shutil.rmtree(zip_downloads_path)
   
-def install():
+def __install():
   for lib in not_found_libs:
     config_name = lib["config_name"]
     if config_name in lib_paths_dict:
@@ -221,12 +221,18 @@ def install():
     paths_not_found = __look_for_paths(lib, lib["paths"], [libs_install_dir])
   
     if len(paths_not_found) > 0:
-      rexpy.diagnostics.log_err(f"failed to install {config_name}")
+      rexpy.diagnostics.log_err(f"failed to __install {config_name}")
   
-def run():
-  if not are_installed():
-    download()
-    install()
+def __save_rexpy_install_dir(rexpyInstallDir : str):
+  lib_paths_dict["rexpy_path"] = rexpyInstallDir
+  rexpy.rex_json.save_file(lib_paths_filepath, lib_paths_dict)
+
+def run(rexpyInstallDir):
+  __save_rexpy_install_dir(rexpyInstallDir)
+  
+  if not __are_installed():
+    __download()
+    __install()
 
   rexpy.rex_json.save_file(lib_paths_filepath, lib_paths_dict)
   
