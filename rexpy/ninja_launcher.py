@@ -6,6 +6,7 @@ import filelock
 import sys
 import rexpy.util
 import rexpy.rex_json
+import rexpy.diagnostics
 
 def builds_in_flight_filepath():
   root = rexpy.util.find_root()
@@ -25,13 +26,23 @@ def pid_for_build_in_flight(build_in_flight_file, ninja_file):
 
   return pid
   
+def default_output_callback(pid, output):
+  for line in iter(output.readline, b''):
+    new_line : str = line.decode('UTF-8')
+
+    if new_line.endswith('\n'):
+      new_line = new_line.removesuffix('\n')
+
+    rexpy.diagnostics.log_no_color(f"[pid:{pid}] {new_line}")    
+
 def launch_new_build(ninja_exe, ninja_file, ninja_build, builds_in_flight_filepath):
     if ninja_build == None:
       raise Exception("Invalid build target")
   
     cmd = f"{ninja_exe} -f {ninja_file} {ninja_build}"
-    print(f"[Ninja Launcher] Launching: {ninja_file} - {ninja_build}")
-    proc = subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    rexpy.diagnostics.log_debug(f"[Ninja Launcher] Launching: {ninja_file} - {ninja_build} - pid: {proc.pid}")
+    default_output_callback(proc.pid, proc.stdout)
     lock = filelock.FileLock(f"{builds_in_flight_filepath}.lock")
     with open(builds_in_flight_filepath, "a") as f:
       f.write(f"{ninja_file},{proc.pid}\n")
