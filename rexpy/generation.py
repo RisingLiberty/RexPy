@@ -2,7 +2,7 @@ import os
 import rexpy.diagnostics
 import rexpy.rex_json
 import rexpy.util
-import required_tools
+import rexpy.required_tools
 import argparse
 import rexpy.diagnostics
 
