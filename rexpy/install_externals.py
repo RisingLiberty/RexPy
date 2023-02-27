@@ -68,8 +68,6 @@ def __download_external(url):
     # get basename of the URL (a.k.a. the filename + extention we would like to download)
     url_basename = os.path.basename(url)
 
-    rexpy.diagnostics.log_info(f"downloading from: {url}")
-
     # request a download of the given URL
     if not os.path.exists(url_basename):
         response = requests.get(url)
@@ -125,7 +123,8 @@ def __verify_external(externalPath, requiredTag):
     external_name = os.path.basename(externalPath)
 
     if os.path.exists(externalPath):
-        rexpy.diagnostics.log_info(f"External found: {external_name} validating version ...")
+        rexpy.diagnostics.log_no_color(f"External found: {external_name}")
+        rexpy.diagnostics.log_no_color(f"validating version ...")
         version_file = os.path.join(externalPath, "version.json")
         if os.path.exists(version_file):
             version_data = rexpy.rex_json.load_file(version_file)           
@@ -135,7 +134,8 @@ def __verify_external(externalPath, requiredTag):
             if not version_data["tag"] == requiredTag:
                 return False
             else:
-                rexpy.diagnostics.log_info(f"External: {external_name} is up to date ({external_name}{requiredTag})")
+                rexpy.diagnostics.log_no_color(f"External: {external_name} is up to date ({external_name} {requiredTag})")
+                return True
         else:
             rexpy.diagnostics.log_err(f"No version file found for {external_name}")
             return False
