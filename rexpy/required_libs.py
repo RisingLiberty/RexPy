@@ -223,13 +223,7 @@ def __install():
     if len(paths_not_found) > 0:
       rexpy.diagnostics.log_err(f"failed to __install {config_name}")
   
-def __save_rexpy_install_dir(rexpyInstallDir : str):
-  lib_paths_dict["rexpy_path"] = rexpyInstallDir
-  rexpy.rex_json.save_file(lib_paths_filepath, lib_paths_dict)
-
-def run(rexpyInstallDir):
-  __save_rexpy_install_dir(rexpyInstallDir)
-  
+def run():
   if not __are_installed():
     __download()
     __install()
