@@ -49,20 +49,6 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
   ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
   dependencies = json_blob[project_lower][compiler_lower][config_lower]["dependencies"]
 
-  # first build the dependencies
-  for dependency in dependencies:
-    dependency_project_name = Path(dependency).stem
-
-    if dependency_project_name in alreadyBuild:
-      continue
-
-    res, buildProjects = __launch_new_build(dependency_project_name, config, compiler, shouldClean, alreadyBuild)
-    if res == 0:
-      alreadyBuild.append(dependency_project_name)
-    else:
-      rexpy.diagnostics.log_err(f"Failed to build {dependency_project_name}")
-      return res, alreadyBuild
-
   rexpy.diagnostics.log_info(f"Building: {project}")
 
   ninja_path = tool_paths_dict["ninja_path"]
@@ -70,7 +56,7 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
     proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file} -t clean")
     proc.wait()
 
-  proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file} -d explain")
+  proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file}")
   proc.wait()
   return proc.returncode, alreadyBuild
 
