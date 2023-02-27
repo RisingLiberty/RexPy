@@ -35,7 +35,7 @@ def __load_required_tools_dict():
   return tools_required
 
 def __print_tool_found(tool, path : str):
-  rexpy.diagnostics.log_info(f"{tool['config_name']} found at {path}")
+  rexpy.diagnostics.log_no_color(f"{tool['config_name']} found at {path}")
 
 def __get_tool_extension(tool):
   extension = "" 

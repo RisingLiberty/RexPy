@@ -45,7 +45,7 @@ def __load_required_libs_dict():
   return libs_required
 
 def __print_lib_found(lib_path, path : str):
-  rexpy.diagnostics.log_info(f"{lib_path} found at {path}")
+  rexpy.diagnostics.log_no_color(f"{lib_path} found at {path}")
 
 # finds any of the paths in the required lib and checks if they're cached already
 # if they're not it adds them to a local list and returns that list
