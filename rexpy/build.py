@@ -4,6 +4,7 @@ import rexpy.required_tools
 import rexpy.rex_json
 import rexpy.util
 import rexpy.diagnostics
+import rexpy.subprocess
 
 from pathlib import Path
 
@@ -58,16 +59,18 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
     res, buildProjects = __launch_new_build(dependency_project_name, config, compiler, shouldClean, alreadyBuild)
     if res == 0:
       alreadyBuild.append(dependency_project_name)
+    else:
+      rexpy.diagnostics.log_err(f"Failed to build {dependency_project_name}")
+      return res, alreadyBuild
 
   rexpy.diagnostics.log_info(f"Building: {project}")
 
   ninja_path = tool_paths_dict["ninja_path"]
   if shouldClean:
-    proc = subprocess.Popen(f"{ninja_path} -f {ninja_file} -t clean")
+    proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file} -t clean")
     proc.wait()
 
-  proc = subprocess.Popen(f"{ninja_path} -f {ninja_file} -v")
-  proc.communicate()
+  proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file} -d explain")
   proc.wait()
   return proc.returncode, alreadyBuild
 
