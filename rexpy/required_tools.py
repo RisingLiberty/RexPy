@@ -60,6 +60,7 @@ def __look_for_tools(required_tools, use_env):
     if version != required_tool["version"]:
       rexpy.diagnostics.log_err(f"{stem} is out of date")
       not_found_tools.append(required_tool)
+      continue
 
     config_name = required_tool["config_name"]
 
@@ -72,6 +73,7 @@ def __look_for_tools(required_tools, use_env):
       else:
         rexpy.diagnostics.log_err(f"Error: tool path cached, but path doesn't exist: {tool_path}")
         not_found_tools.append(required_tool)
+        continue
 
     # if not, add the path of the tool directory where it'd be downloaded to
     paths_to_use = copy.deepcopy(paths)
@@ -86,7 +88,6 @@ def __look_for_tools(required_tools, use_env):
       __print_tool_found(required_tool, tool_path)
       tool_config_name = required_tool["config_name"]
       tool_paths_dict[tool_config_name] = tool_path
-
     # tool is not found, add it to the list to be looked for later
     else:
       not_found_tools.append(required_tool)
