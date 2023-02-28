@@ -53,16 +53,25 @@ def __look_for_tools(required_tools, use_env):
     
   for required_tool in required_tools:
     stem = required_tool["stem"]
+    path = os.path.join(tools_install_dir, required_tool["archive_name"])
+    version = rexpy.util.load_version_file(path)
+
+    # check if our version is up to date
+    if version != required_tool["version"]:
+      rexpy.diagnostics.log_err(f"{stem} is out of date")
+      not_found_tools.append(required_tool)
+
     config_name = required_tool["config_name"]
 
     # check if the tool path is already in the cached paths
     if config_name in tool_paths_dict:
       tool_path = tool_paths_dict[config_name]
       if (os.path.exists(tool_path)):
-        __print_tool_found(required_tool, tool_path)
-        continue
+          rexpy.diagnostics.log_no_color(f"{stem} found at {tool_path}")
+          continue
       else:
         rexpy.diagnostics.log_err(f"Error: tool path cached, but path doesn't exist: {tool_path}")
+        not_found_tools.append(required_tool)
 
     # if not, add the path of the tool directory where it'd be downloaded to
     paths_to_use = copy.deepcopy(paths)
@@ -120,12 +129,12 @@ def __make_zip_download_path():
   if not os.path.exists(zip_downloads_path):
     os.makedirs(zip_downloads_path)
 
-def __download_tool(name, numZipFiles):
-  task_print = rexpy.task_raii_printing.TaskRaiiPrint(f"Downloading tool {name}")
+def __download_tool(name, version, numZipFiles):
+  task_print = rexpy.task_raii_printing.TaskRaiiPrint(f"Downloading tool {name} {version}")
 
   threads = []
   for i in range(numZipFiles):
-    threads.append(__launch_download_thread((f"https://github.com/RisingLiberty/RegisZip/raw/main/data/{name}.zip.{(i + 1):03d}")))
+    threads.append(__launch_download_thread((f"https://github.com/RisingLiberty/RegisZip/raw/{version}/data/{name}.zip.{(i + 1):03d}")))
 
   for thread in threads:
     thread.join()
@@ -149,7 +158,10 @@ def __download_tools_archive():
   for not_found_tool in tools_to_download:
     arch_name = not_found_tool["archive_name"]
     num_zip_files = not_found_tool["num_zip_files"]
-    __download_tool(arch_name, num_zip_files)
+    version = not_found_tool["version"]
+    __download_tool(arch_name, version, num_zip_files)
+
+  return tools_to_download
     
 def __enumerate_tools(zipsFolder):
   zips = os.listdir(zipsFolder)
@@ -176,7 +188,7 @@ def __unzip_tools():
 
   for tool in tools_to_unzip:
     tool_zip_files = __zip_files_for_tool(tool, zip_downloads_path)
-    tool_master_zip = os.path.join(zip_downloads_path, f"{tool}.zip")
+    tool_master_zip = os.path.join(zip_downloads_path, f"{tool}")
     with open(tool_master_zip, "ab") as f:
       for tool_zip in tool_zip_files:
         with open(tool_zip, "rb") as z:
@@ -186,6 +198,11 @@ def __unzip_tools():
         zip_obj.extractall(tools_install_dir)
 
   rexpy.diagnostics.log_info(f"tools unzipped to {tools_install_dir}")
+
+def __create_version_files(toolsToDownload : []):
+  for tool in toolsToDownload:
+    path = os.path.join(tools_install_dir, tool["archive_name"])
+    rexpy.util.create_version_file(path, tool["version"])
 
 def __delete_tmp_folders():
   shutil.rmtree(zip_downloads_path)
@@ -198,8 +215,9 @@ def __launch_download_thread(url):
 def download():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("Downloading tools")
   __make_zip_download_path()
-  __download_tools_archive()
+  tools_to_download = __download_tools_archive()
   __unzip_tools()
+  __create_version_files(tools_to_download)
   __delete_tmp_folders()
 
 def install():

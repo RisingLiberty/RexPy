@@ -1,8 +1,25 @@
 import os
 import subprocess
 from pathlib import Path
-import diagnostics
+import rexpy.diagnostics
 import rexpy.rex_json
+
+def create_version_file(directory : str, tag : str):
+    version = {
+        "tag": tag
+    }
+
+    path = os.path.join(directory, "version.json")
+    rexpy.rex_json.save_file(path, version)
+
+def load_version_file(directory):
+  version_file = os.path.join(directory, "version.json")
+  if os.path.exists(version_file):
+    version_data = rexpy.rex_json.load_file(version_file)           
+    if version_data != None:
+      return version_data["tag"]
+
+  return ''
 
 def env_paths():
   envPath = os.environ["PATH"]

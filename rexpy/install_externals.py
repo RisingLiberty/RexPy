@@ -108,37 +108,17 @@ def __download_external(url):
 
     return added_directory_names
 
-def __create_version_file(externalsDir, tag):
-    version = {
-        "tag": tag
-    }
-
-    json_object = json.dumps(version, indent=4)
-
-    # Writing to version.json
-    with open(os.path.join(externalsDir, "version.json"), "w") as out:
-        out.write(json_object)
-
 def __verify_external(externalPath, requiredTag):
     external_name = os.path.basename(externalPath)
 
     if os.path.exists(externalPath):
         rexpy.diagnostics.log_no_color(f"External found: {external_name}")
         rexpy.diagnostics.log_no_color(f"validating version ...")
-        version_file = os.path.join(externalPath, "version.json")
-        if os.path.exists(version_file):
-            version_data = rexpy.rex_json.load_file(version_file)           
-            if version_data == None:
-                rexpy.diagnostics.log_err(f"Invalid version data found, redownloading external: {external_name}")
-                return False             
-            if not version_data["tag"] == requiredTag:
-                return False
-            else:
-                rexpy.diagnostics.log_no_color(f"External: {external_name} is up to date ({external_name} {requiredTag})")
-                return True
-        else:
-            rexpy.diagnostics.log_err(f"No version file found for {external_name}")
+        version = rexpy.util.load_version_file(externalPath)
+        if version != requiredTag:
+            rexpy.diagnostics.log_err(f"Invalid version data found, redownloading external: {external_name}")
             return False
+        return True
 
     else:
         return False
@@ -184,7 +164,7 @@ def __install_external(external):
             rexpy.diagnostics.log_err("No directories where extracted.")
             return
 
-        __create_version_file(externals_dir, external_tag)   
+        rexpy.util.create_version_file(externals_dir, external_tag)   
 
 def run():
     rexpy.diagnostics.log_info("Start installing externals ...")

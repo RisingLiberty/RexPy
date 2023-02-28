@@ -106,12 +106,12 @@ def __launch_download_thread(url):
     thread.start()
     return thread  
 
-def __download_lib(name, numZipFiles):
-  task_print = rexpy.task_raii_printing.TaskRaiiPrint(f"Downloading lib {name}")
+def __download_lib(name, version, numZipFiles):
+  task_print = rexpy.task_raii_printing.TaskRaiiPrint(f"Downloading lib {name} {version}")
 
   threads = []
   for i in range(numZipFiles):
-    threads.append(__launch_download_thread((f"https://github.com/RisingLiberty/RegisZip/raw/main/data/{name}.zip.{(i + 1):03d}")))
+    threads.append(__launch_download_thread((f"https://github.com/RisingLiberty/RegisZip/raw/{version}/data/{name}.zip.{(i + 1):03d}")))
 
   for thread in threads:
     thread.join()
@@ -152,12 +152,26 @@ def __unzip_lib(name):
 
   rexpy.diagnostics.log_info(f"libs unzipped to {libs_install_dir}")
 
+def __is_up_to_date(installPaths, lib):
+  for install_path in installPaths:
+    path = os.path.join(install_path, lib["archive_name"])
+    version = rexpy.util.load_version_file(path)
+    if version == lib["version"]:
+      return True
+  
+  return False
+  
 def __look_for_required_libs(required_libs):
   not_found_libs = []
   install_paths = rexpy.util.env_paths()
   install_paths.append(tools_install_dir)
   install_paths.append(libs_install_dir)
   for required_lib in required_libs:
+    if not __is_up_to_date(install_paths, required_lib):
+      rexpy.diagnostics.log_err(f"{required_lib['archive_name']} out of date")
+      not_found_libs.append(required_lib)
+      continue
+    
     uncached_paths = __find_uncached_paths(required_lib)
     paths_not_found = __look_for_paths(required_lib, uncached_paths, install_paths)
     
@@ -207,8 +221,9 @@ def __download():
       libs_to_download.append(not_found_tool)
 
   for lib in libs_to_download:
-    __download_lib(lib["archive_name"], lib["num_zip_files"])
+    __download_lib(lib["archive_name"], lib["version"], lib["num_zip_files"])
     __unzip_lib(lib)
+    rexpy.util.create_version_file(os.path.join(libs_install_dir, lib["archive_name"]), lib["version"])
 
   # remove it after all libs have been downloaded
   shutil.rmtree(zip_downloads_path)
@@ -221,7 +236,7 @@ def __install():
     paths_not_found = __look_for_paths(lib, lib["paths"], [libs_install_dir])
   
     if len(paths_not_found) > 0:
-      rexpy.diagnostics.log_err(f"failed to __install {config_name}")
+      rexpy.diagnostics.log_err(f"failed to install {config_name}")
   
 def run():
   if not __are_installed():

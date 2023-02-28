@@ -3,7 +3,7 @@ import rexpy.diagnostics
 import rexpy.rex_json
 import rexpy.util
 import rexpy.required_tools
-import rexpy.subprocess
+import rexpy.subproc
 import rexpy.diagnostics
 
 root = rexpy.util.find_root()
@@ -28,4 +28,4 @@ def new_generation(sharpmakeFiles : list[str], sharpmakeArgs : list[str]):
   sharpmake_sources = sharpmake_sources[0:len(sharpmake_sources) - 2]
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
-  rexpy.subprocess.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics {sharpmakeArgs}")
+  rexpy.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics {sharpmakeArgs}")

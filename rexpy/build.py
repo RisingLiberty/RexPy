@@ -4,7 +4,7 @@ import rexpy.required_tools
 import rexpy.rex_json
 import rexpy.util
 import rexpy.diagnostics
-import rexpy.subprocess
+import rexpy.subproc
 
 from pathlib import Path
 
@@ -53,10 +53,10 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
 
   ninja_path = tool_paths_dict["ninja_path"]
   if shouldClean:
-    proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file} -t clean")
+    proc = rexpy.subproc.run(f"{ninja_path} -f {ninja_file} -t clean")
     proc.wait()
 
-  proc = rexpy.subprocess.run(f"{ninja_path} -f {ninja_file}")
+  proc = rexpy.subproc.run(f"{ninja_path} -f {ninja_file}")
   proc.wait()
   return proc.returncode, alreadyBuild
 
