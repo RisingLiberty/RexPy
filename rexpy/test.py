@@ -19,6 +19,8 @@ import rexpy.task_raii_printing
 import rexpy.rex_json
 import rexpy.code_coverage
 import rexpy.diagnostics
+import rexpy.generation
+import rexpy.build
 
 from pathlib import Path
 from datetime import datetime
@@ -59,6 +61,8 @@ def __default_output_callback(output):
 def __run_include_what_you_use(fixIncludes = False):
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
 
+  rexpy.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), "")
+
   intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"])
   result = rexpy.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
     
@@ -90,6 +94,8 @@ def __get_project_name(compdbPath):
 
 def __run_clang_tidy():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running clang-tidy")
+
+  rexpy.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), "")
 
   intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"])
   result = rexpy.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
@@ -123,20 +129,45 @@ def __run_clang_tidy():
 
   return rc
 
-def __generate_test_files(generateArgs):
-  generate_script = os.path.join(root_path, "generate.py")
-  proc = rexpy.util.run_subprocess(f"py {generate_script} {generateArgs}")
-  return rexpy.util.wait_for_process(proc)
+def __generate_test_files(sharpmakeArgs):
+  root = rexpy.util.find_root()
+  settings_path = os.path.join(root, "build", "config", "settings.json")
+  proc = rexpy.generation.new_generation(settings_path, sharpmakeArgs)
+  proc.wait()
+  return proc.returncode
 
-def __build_test_files(buildArgs):
-  build_script = os.path.join(root_path, "build.py")
-  proc = rexpy.util.run_subprocess(f"py {build_script} {buildArgs}")
-  return rexpy.util.wait_for_process(proc)
+def __find_projects_with_suffix(directory, suffix):
+  projects = []
+  for root, dirs, files in os.walk(directory):
+    for file in files:
+      filename = Path(file).name
+      if filename.endswith(f"{suffix}.nproj"):
+        projects.append(Path(filename).stem)
 
-def __find_test_programs(folder):
+  return projects
+
+def __build_test_files(projectSuffix : str, configs : [str], compilers : [str]):
+  should_clean = False
+
+  result = 0
+
+  intermediate_folder = settings["intermediate_folder"]
+  build_folder = settings["build_folder"]
+
+  directory = os.path.join(root_path, intermediate_folder, build_folder, "ninja")
+  projects = __find_projects_with_suffix(directory, projectSuffix)
+
+  for project in projects:
+    for config in configs:
+      for compiler in compilers:
+        result |= rexpy.build.new_build(project, config, compiler, should_clean)
+
+  return result
+
+def __find_test_programs(folder, regex):
   intermediate_folder = os.path.join(folder)
   rexpy.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, intermediate_folder)}")
-  result = rexpy.util.find_all_files_in_folder(os.path.join(root_path, intermediate_folder), "*")
+  result = rexpy.util.find_all_files_in_folder(os.path.join(root_path, intermediate_folder), regex)
   coverage_programs = []
   for res in result:
     if rexpy.util.is_executable(res):
@@ -147,15 +178,15 @@ def __find_test_programs(folder):
 # unit tests
 def __generate_tests():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("generating unit test projects")
-  return __generate_test_files("-unittests")
+  return __generate_test_files("/generateUnitTests")
 
 def __build_tests():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("building tests")
-  return __build_test_files("-unittests")
+  return __build_test_files("test", ["debug", "debug_opt", "release"], ["msvc", "clang"])
 
 def __run_unit_tests():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running unit tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["tests_folder"], settings["build_folder"]))
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], settings["build_folder"]), "*test*")
   
   rc = 0
   for program in unit_test_programs:
@@ -171,15 +202,15 @@ def __run_unit_tests():
 # coverage
 def __generate_coverage():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("generating coverage code")
-  return __generate_test_files("-coverage")
+  return __generate_test_files("/generateUnitTests /enableCoverage")
 
 def __build_coverage():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("building coverage code")
-  return __build_test_files("-coverage")
+  return __build_test_files("_coverage", ["coverage"], ["clang"])
 
 def __run_coverage():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running coverage")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["coverage_folder"]))
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*coverage*")
 
   rc = 0
   for program in unit_test_programs:
@@ -250,15 +281,15 @@ def __get_coverage_rawdata_filename(program : str):
 # asan
 def __generate_address_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("generating address sanitizer code")
-  return __generate_test_files("-asan")
+  return __generate_test_files("/generateUnitTests /enableAddressSanitizer")
 
 def __build_address_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("building address sanitizer code")
-  return __build_test_files("-asan")
+  return __build_test_files("_asan", ["address_sanitizer"], ["clang"])
 
 def __run_address_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running address sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["tests_folder"], "asan"))
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*asan*")
   
   rc = 0
   for program in unit_test_programs:
@@ -287,15 +318,15 @@ def __run_address_sanitizer():
 # ubsan
 def __generate_undefined_behavior_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("generating undefined behavior sanitizer code")
-  return __generate_test_files("-ubsan")
+  return __generate_test_files("/generateUnitTests /enableUBSanitizer")
 
 def __build_undefined_behavior_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("building undefined behavior sanitizer code")
-  return __build_test_files("-ubsan")
+  return __build_test_files("_ubsan", ["undefined_behavior_sanitizer"], ["clang"])
 
 def __run_undefined_behavior_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running undefined behavior sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["tests_folder"], "ubsan"))
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*ubsan*")
   
   rc = 0
   for program in unit_test_programs:
@@ -322,15 +353,15 @@ def __run_undefined_behavior_sanitizer():
 # fuzzy
 def __generate_fuzzy_testing():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("generating fuzzy testing code")
-  return __generate_test_files("-fuzzy")
+  return __generate_test_files("/enableFuzzyTesting")
 
 def __build_fuzzy_testing():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
-  return __build_test_files("-fuzzy")
+  return __build_test_files("_fuzzy", ["fuzzy"], ["clang"])
 
 def __run_fuzzy_testing():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
-  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["tests_folder"], "fuzzy"))
+  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*fuzzy*")
   
   rc = 0
   for program in fuzzy_programs:
@@ -492,6 +523,6 @@ def __shutil_error(func, path, exec_info):
   rexpy.diagnostics.log_err(f"shutil error: {func}, {path}, {exec_info}")
 
 def clean():
-  intermediate_tests_path = os.path.join(root_path, settings["intermediate_folder"], settings["tests_folder"])
+  intermediate_tests_path = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"])
   if os.path.exists(intermediate_tests_path):
     shutil.rmtree(intermediate_tests_path, onerror=__shutil_error)

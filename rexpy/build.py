@@ -31,7 +31,7 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
 
   if project_file_path == "":
     rexpy.diagnostics.log_err(f"project '{project}' was not found, have you generated it?")
-    return
+    return 1, alreadyBuild
     
   json_blob = rexpy.rex_json.load_file(project_file_path)
 
@@ -41,10 +41,11 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
   
   if compiler not in json_blob[project_lower]:
     rexpy.diagnostics.log_err(f"no compiler '{compiler}' found for project '{project}'")
-    return
+    return 1, alreadyBuild
   
   if config not in json_blob[project_lower][compiler_lower]:
     rexpy.diagnostics.log_err(f"no config '{config}' found in project '{project}' for compiler '{compiler}'")
+    return 1, alreadyBuild
 
   ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
   dependencies = json_blob[project_lower][compiler_lower][config_lower]["dependencies"]
