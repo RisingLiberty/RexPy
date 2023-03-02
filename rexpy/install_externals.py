@@ -77,7 +77,7 @@ def __download_external(url):
         else:
             # bad request was made
             rexpy.diagnostics.log_err(f"Bad request [{str(response.status_code)}] for given url: {url}")
-            return 1
+            return []
         
     # extract the zip file on disk
     # we cache the files within the directory before 
