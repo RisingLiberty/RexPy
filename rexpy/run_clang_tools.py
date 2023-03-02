@@ -32,25 +32,11 @@ def __run_command(command):
   streamdata = proc.communicate()[0]
   return proc.returncode
 
-def __copy_clang_config_files(targetDir, srcRoot):
-  clang_tidy_firstpass_config_src_path = os.path.join(rexpy.util.find_in_parent(srcRoot, clang_tidy_first_pass_filename), clang_tidy_first_pass_filename)
-  clang_tidy_secondpass_config_src_path = os.path.join(rexpy.util.find_in_parent(srcRoot, clang_tidy_first_pass_filename), clang_tidy_second_pass_filename)
-  clang_format_config_src_path = os.path.join(rexpy.util.find_in_parent(srcRoot, clang_tidy_first_pass_filename), clang_tidy_format_filename)
-
-  clang_tidy_firstpass_config_dst_path = os.path.join(targetDir, clang_tidy_first_pass_filename)
-  clang_tidy_secondpass_config_dst_path = os.path.join(targetDir, clang_tidy_second_pass_filename)
-  clang_format_config_dst_path = os.path.join(targetDir, clang_tidy_format_filename)
-  
-  shutil.copy(clang_tidy_firstpass_config_src_path, clang_tidy_firstpass_config_dst_path)
-  shutil.copy(clang_tidy_secondpass_config_src_path, clang_tidy_secondpass_config_dst_path)
-  shutil.copy(clang_format_config_src_path, clang_format_config_dst_path)
-
 def run(projectName, compdb, srcRoot):
   script_path = os.path.dirname(__file__)
   global project
   project = projectName
 
-  __copy_clang_config_files(compdb, srcRoot)
   headerFilters = rexpy.util.retrieve_header_filters(compdb, project)
   headerFiltersRegex = rexpy.util.create_header_filter_regex(headerFilters)
 
