@@ -141,7 +141,7 @@ def __find_projects_with_suffix(directory, suffix):
   for root, dirs, files in os.walk(directory):
     for file in files:
       filename = Path(file).name
-      if filename.endswith(f"{suffix}.nproj"):
+      if filename.lower().endswith(f"{suffix}.nproj".lower()):
         projects.append(Path(filename).stem)
 
   return projects
@@ -186,7 +186,7 @@ def __build_tests():
 
 def __run_unit_tests():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running unit tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], settings["build_folder"]), "*test*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*test*")
   
   rc = 0
   for program in unit_test_programs:
@@ -210,7 +210,7 @@ def __build_coverage():
 
 def __run_coverage():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running coverage")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*coverage*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*coverage*")
 
   rc = 0
   for program in unit_test_programs:
@@ -289,7 +289,7 @@ def __build_address_sanitizer():
 
 def __run_address_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running address sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*asan*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*asan*")
   
   rc = 0
   for program in unit_test_programs:
@@ -326,7 +326,7 @@ def __build_undefined_behavior_sanitizer():
 
 def __run_undefined_behavior_sanitizer():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running undefined behavior sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*ubsan*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*ubsan*")
   
   rc = 0
   for program in unit_test_programs:
@@ -361,7 +361,7 @@ def __build_fuzzy_testing():
 
 def __run_fuzzy_testing():
   task_print = rexpy.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
-  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"]), "*fuzzy*")
+  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*fuzzy*")
   
   rc = 0
   for program in fuzzy_programs:
