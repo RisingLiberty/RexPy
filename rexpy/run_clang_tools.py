@@ -27,6 +27,10 @@ build_folder = settings["build_folder"]
 processes_in_flight_filename = os.path.join(root, intermediate_folder, build_folder, "ninja", "post_builds_in_flight.tmp")
 project = ""
 
+def __quoted_path(path):
+  quote = "\""
+  return f"{quote}{path}{quote}"
+
 def __run_command(command):
   proc = rexpy.subproc.run(command)
   streamdata = proc.communicate()[0]
@@ -46,13 +50,13 @@ def run(projectName, compdb, srcRoot):
   clang_config_file = os.path.join(compdb, clang_tidy_first_pass_filename)
 
   rexpy.diagnostics.log_info("Running clang-tidy - auto fixes")
-  rc = __run_command(f"py {script_path}/run_clang_tidy.py -clang-tidy-binary={clang_tidy_path} -clang-apply-replacements-binary={clang_apply_replacements_path} -config-file={clang_config_file} -p={compdb} -header-filter={headerFiltersRegex} -quiet -fix") # force clang compiler, as clang-tools expect it
+  rc = __run_command(f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet -fix") # force clang compiler, as clang-tools expect it
 
   if rc != 0:
     raise Exception("clang-tidy auto fixes failed")
 
   rexpy.diagnostics.log_info("Running clang-format")
-  rc = __run_command(f"py {script_path}/run_clang_format.py --clang-format-executable={clang_format_path} -r -i {srcRoot}")
+  rc = __run_command(f"py {__quoted_path(script_path)}/run_clang_format.py --clang-format-executable={__quoted_path(clang_format_path)} -r -i {srcRoot}")
 
   if rc != 0:
     raise Exception("clang-format failed")
