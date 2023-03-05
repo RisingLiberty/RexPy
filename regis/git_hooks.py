@@ -1,10 +1,10 @@
 import os
 import shutil
-import rexpy.util
-import rexpy.task_raii_printing
+import regis.util
+import regis.task_raii_printing
 
 def __install(hooksPath):
-    root_path = rexpy.util.find_root()
+    root_path = regis.util.find_root()
 
     if not os.path.exists(hooksPath):
         return
@@ -17,5 +17,5 @@ def __install(hooksPath):
         shutil.copy(src, dst)
 
 def run(hooksPath):
-    task = rexpy.task_raii_printing.TaskRaiiPrint("Installing git hooks")
+    task = regis.task_raii_printing.TaskRaiiPrint("Installing git hooks")
     __install(hooksPath)

@@ -1,14 +1,14 @@
 import os
 import argparse
-import rexpy.util
-import rexpy.rex_json
-import rexpy.required_tools
-import rexpy.required_libs
+import regis.util
+import regis.rex_json
+import regis.required_tools
+import regis.required_libs
 import shutil
 
-root_path = rexpy.util.find_root()
-settings = rexpy.rex_json.load_file(os.path.join(root_path, "build", "config", "settings.json"))
-intermediate_dir = os.path.join(rexpy.util.find_root(), settings["intermediate_folder"])
+root_path = regis.util.find_root()
+settings = regis.rex_json.load_file(os.path.join(root_path, "build", "config", "settings.json"))
+intermediate_dir = os.path.join(regis.util.find_root(), settings["intermediate_folder"])
 
 def __clean_intermediate():
   # this clean the entire intermediate directory and all sub folders
@@ -19,8 +19,8 @@ def run(shouldClean):
   if shouldClean:
     __clean_intermediate()
       
-  rexpy.required_tools.run(False)
-  rexpy.required_libs.run()
+  regis.required_tools.run(False)
+  regis.required_libs.run()
       
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()

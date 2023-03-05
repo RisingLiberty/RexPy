@@ -1,6 +1,6 @@
 import re
 import subprocess
-import rexpy.diagnostics
+import regis.diagnostics
 
 def __has_word(line, word : str):
   regex_str = f"({word.lower()})[\]}} \)\:]|({word.upper()})[\]}} \)\:]"
@@ -20,11 +20,11 @@ def __build_output_callback(output : bytes):
       new_line = new_line.removesuffix('\n')
 
     if __has_error(new_line):
-      rexpy.diagnostics.log_err(new_line)
+      regis.diagnostics.log_err(new_line)
     elif __has_warning(new_line):
-      rexpy.diagnostics.log_warn(new_line)
+      regis.diagnostics.log_warn(new_line)
     else:
-      rexpy.diagnostics.log_no_color(new_line)
+      regis.diagnostics.log_no_color(new_line)
 
 def run(cmd):
   proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)

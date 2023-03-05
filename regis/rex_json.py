@@ -1,10 +1,10 @@
 import json
 import os
-import rexpy.diagnostics
+import regis.diagnostics
 
 def load_file(path):
   if not os.path.exists(path):
-    rexpy.diagnostics.log_err(f"Failed to load json, file does not exist '{path}'")
+    regis.diagnostics.log_err(f"Failed to load json, file does not exist '{path}'")
     return None
 
   f = open(path)

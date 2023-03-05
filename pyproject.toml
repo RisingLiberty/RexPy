@@ -1,23 +1,23 @@
 [build-system]
-requires = ["setuptools", "wheel", "hatchling", "requests", "termcolor", "psutil", "filelock", "gitpython"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rexpy"
-version = "0.0.29"
+name = "regis"
+version = "0.1.1"
 authors = [
   { name="Nick De Breuck", email="nick.debreuck@outlook.com" },
 ]
 description = "python framework used by Rex Engine"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "setuptools", "wheel", "hatchling", "requests", "termcolor", "psutil", "filelock", "gitpython"
+  "requests", "termcolor", "psutil", "filelock", "gitpython"
 ]
 
 [project.urls]

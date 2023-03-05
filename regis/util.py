@@ -1,8 +1,8 @@
 import os
 import subprocess
 from pathlib import Path
-import rexpy.diagnostics
-import rexpy.rex_json
+import regis.diagnostics
+import regis.rex_json
 
 def create_version_file(directory : str, tag : str):
     version = {
@@ -10,12 +10,12 @@ def create_version_file(directory : str, tag : str):
     }
 
     path = os.path.join(directory, "version.json")
-    rexpy.rex_json.save_file(path, version)
+    regis.rex_json.save_file(path, version)
 
 def load_version_file(directory):
   version_file = os.path.join(directory, "version.json")
   if os.path.exists(version_file):
-    version_data = rexpy.rex_json.load_file(version_file)           
+    version_data = regis.rex_json.load_file(version_file)           
     if version_data != None:
       return version_data["tag"]
 
@@ -32,7 +32,7 @@ def retrieve_header_filters(targetDir, projectName):
   if not os.path.exists(filepath):
     raise Exception(f"clang tools project file doesn't exist, please check your sharpmake scripts: {filepath}")
 
-  jsonBlob = rexpy.rex_json.load_file(filepath)
+  jsonBlob = regis.rex_json.load_file(filepath)
   return jsonBlob["HeaderFilters"]
 
 def create_header_filter_regex(headerFilters : list[str]):
