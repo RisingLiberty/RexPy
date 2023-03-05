@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling", "requests", "termcolor", "psutil", "filelock", "gitpython"]
+requires = ["setuptools", "wheel", "hatchling", "requests", "termcolor", "psutil", "filelock", "gitpython"]
 build-backend = "hatchling.build"
 
 [project]
 name = "rexpy"
-version = "0.0.27"
+version = "0.0.29"
 authors = [
   { name="Nick De Breuck", email="nick.debreuck@outlook.com" },
 ]
@@ -15,6 +15,9 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+]
+dependencies = [
+  "setuptools", "wheel", "hatchling", "requests", "termcolor", "psutil", "filelock", "gitpython"
 ]
 
 [project.urls]
