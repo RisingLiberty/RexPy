@@ -10,24 +10,8 @@ from pathlib import Path
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
 
-def __find_project_file(project):
-  root = regis.util.find_root()
-  project_file_name = f"{project}.nproj"
-  settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
-  intermediate_folder = settings["intermediate_folder"]
-  build_folder = settings["build_folder"]
-
-  directory = os.path.join(root, intermediate_folder, build_folder, "ninja")
-  
-  for root_, dirs, files in os.walk(directory):
-    for file in files:
-      if Path(file).name.lower() == project_file_name.lower():
-        return os.path.join(root_, file)
-
-  return ""
-
 def __launch_new_build(project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : [str]):
-  project_file_path = __find_project_file(project)
+  project_file_path = regis.util.find_ninja_project(project)
 
   if project_file_path == "":
     regis.diagnostics.log_err(f"project '{project}' was not found, have you generated it?")

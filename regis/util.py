@@ -121,7 +121,7 @@ def find_in_parent(path, toFind):
 def find_root():
   res = find_in_parent(os.getcwd(), "source")
   if (res == ''):
-    diagnostics.log_err(f"root not found")
+    regis.diagnostics.log_err(f"root not found")
 
   return res
 
@@ -164,3 +164,19 @@ def is_executable(path):
 
 def find_all_files_in_folder(dir, toFindRegex):
   return list(Path(dir).rglob(toFindRegex))
+
+def find_ninja_project(project):
+  root = find_root()
+  project_file_name = f"{project}.nproj"
+  settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+  intermediate_folder = settings["intermediate_folder"]
+  build_folder = settings["build_folder"]
+
+  directory = os.path.join(root, intermediate_folder, build_folder, "ninja")
+  
+  for root_, dirs, files in os.walk(directory):
+    for file in files:
+      if Path(file).name.lower() == project_file_name.lower():
+        return os.path.join(root_, file)
+
+  return ""

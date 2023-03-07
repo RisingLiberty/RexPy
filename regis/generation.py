@@ -70,3 +70,33 @@ def new_generation(settingsPath : str, sharpmakeArgs : list[str]):
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
   return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics {sharpmakeArgs}")
+
+def generate_compiler_db(project, config):
+  project_file_path = regis.util.find_ninja_project(project)
+
+  if project_file_path == "":
+    regis.diagnostics.log_err(f"project '{project}' was not found, have you generated it?")
+    return 1
+  
+  json_blob = regis.rex_json.load_file(project_file_path)
+
+  project_lower = project.lower()
+  compiler_lower = "clang"
+  config_lower = config.lower()
+
+  if compiler_lower not in json_blob[project_lower]:
+    regis.diagnostics.log_err(f"no compiler '{compiler_lower}' found for project '{project}'")
+    return 1
+  
+  if config not in json_blob[project_lower][compiler_lower]:
+    regis.diagnostics.log_err(f"no config '{config}' found in project '{project}' for compiler '{compiler_lower}'")
+    return 1
+
+  ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
+  regis.diagnostics.log_info(f"Generating Compiler Database for: {project} - {config}")
+
+  ninja_path = tool_paths_dict["ninja_path"]
+  proc = regis.subproc.run(f"{ninja_path} -f {ninja_file} compdb_{project}_{config}_clang")
+  proc.wait()
+  return proc.returncode
+
