@@ -112,13 +112,15 @@ def __run_clang_tidy():
     header_filters = regis.util.retrieve_header_filters(compiler_db_folder, project_name)
     header_filters_regex = regis.util.create_header_filter_regex(header_filters)
 
-    cmd = f"py {script_path}/run_clang_tidy.py"
-    cmd += f" -clang-tidy-binary={clang_tidy_path}"
-    cmd += f" -clang-apply-replacements-binary={clang_apply_replacements_path}"
-    cmd += f" -config-file={config_file_path}"
-    cmd += f" -p={compiler_db_folder}"
+    cmd = f"py \"{script_path}/run_clang_tidy.py\""
+    cmd += f" -clang-tidy-binary=\"{clang_tidy_path}\""
+    cmd += f" -clang-apply-replacements-binary=\"{clang_apply_replacements_path}\""
+    cmd += f" -config-file=\"{config_file_path}\""
+    cmd += f" -p=\"{compiler_db_folder}\""
     cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
     cmd += f" -quiet"
+
+    regis.diagnostics.log_info(f"executing: {cmd}")
 
     proc = regis.util.run_subprocess_with_callback(cmd, __default_output_callback)
     new_rc = regis.util.wait_for_process(proc)
