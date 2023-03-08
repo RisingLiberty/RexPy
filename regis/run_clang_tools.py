@@ -52,10 +52,6 @@ def run(projectName, compdb, srcRoot):
   compdb_path = os.path.join(compdb, "compile_commands.json")
   if os.path.exists(compdb_path):
     regis.diagnostics.log_info(f"Compiler db found at {compdb_path}")
-    print("compiler db content:")
-    
-    with open(compdb_path) as f:
-      print(f.readlines())
 
     regis.diagnostics.log_info("Running clang-tidy - auto fixes")
     rc = __run_command(f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet -fix") # force clang compiler, as clang-tools expect it
