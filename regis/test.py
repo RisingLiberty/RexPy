@@ -418,7 +418,7 @@ def __run_fuzzy_testing():
 # auto tests
 def __generate_auto_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating auto tests")
-  return __generate_test_files("/noCompilerDB")
+  return __generate_test_files("/noClangTools")
 
 def __build_auto_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
