@@ -139,6 +139,7 @@ def is_windows():
 
 def run_subprocess(command):
   proc = subprocess.Popen(command)
+  proc.communicate()
   return proc
 
 def run_subprocess_with_working_dir(command, workingDir):
