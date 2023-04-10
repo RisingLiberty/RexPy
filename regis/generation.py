@@ -39,8 +39,13 @@ def __find_sharpmake_root_files(directory):
 
   return sharpmakes_files
 
-def __load_sharpmake_files(sharpmakePath : str):
-  settings = regis.rex_json.load_file(sharpmakePath)
+def __scan_for_sharpmake_files(settingsPath : str):
+  """
+  scans for sharpmake files in the current directory using the settings.
+  it searches for all the sharpmake files in the sharpmake root, source folder and test folder.
+  all searches are done recursively.
+  """
+  settings = regis.rex_json.load_file(settingsPath)
   sharpmake_root = os.path.join(root, settings["build_folder"], "sharpmake")
   source_root = os.path.join(root, settings["source_folder"])
   tests_root = os.path.join(root, settings["tests_folder"])
@@ -52,8 +57,13 @@ def __load_sharpmake_files(sharpmakePath : str):
 
   return sharpmakes_files
 
-def new_generation(settingsPath : str, sharpmakeArgs : list[str]):
-  sharpmake_files = __load_sharpmake_files(settingsPath)
+def new_generation(settingsPath : str, sharpmakeArgs : str = ""):
+  """
+  performs a new generation using the sharpmake files found by searching the current directory recursively.
+  '/diagnostics' is always added as a sharpmake arguments.
+  """
+
+  sharpmake_files = __scan_for_sharpmake_files(settingsPath)
   
   sharpmake_path = tool_paths_dict["sharpmake_path"]
   if len(sharpmake_path) == 0:

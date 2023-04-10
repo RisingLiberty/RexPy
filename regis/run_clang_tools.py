@@ -36,7 +36,7 @@ def __run_command(command):
   streamdata = proc.communicate()[0]
   return proc.returncode
 
-def run(projectName, compdb, srcRoot):
+def run(projectName, compdb, srcRoot, allChecks, regex):
   script_path = os.path.dirname(__file__)
   global project
   project = projectName
@@ -54,10 +54,19 @@ def run(projectName, compdb, srcRoot):
     regis.diagnostics.log_info(f"Compiler db found at {compdb_path}")
 
     regis.diagnostics.log_info("Running clang-tidy - auto fixes")
-    rc = __run_command(f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet -fix") # force clang compiler, as clang-tools expect it
+    cmd = f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet -fix {regex}"
+    rc = __run_command(cmd) # force clang compiler, as clang-tools expect it
 
     if rc != 0:
       raise Exception("clang-tidy auto fixes failed")
+  
+    if allChecks:
+      clang_config_file = os.path.join(compdb, clang_tidy_second_pass_filename)
+      regis.diagnostics.log_info("Running clang-tidy - all checks")  
+      cmd = f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet {regex}"
+      rc = __run_command(cmd) # force clang compiler, as clang-tools expect it
+
+
   else:
     regis.diagnostics.log_warn(f"No compiler db found at {compdb}")
 
