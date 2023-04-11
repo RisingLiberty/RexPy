@@ -91,7 +91,7 @@ def __get_project_name(compdbPath):
   
   return ""
 
-def __run_clang_tidy():
+def __run_clang_tidy(filesRegex):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running clang-tidy")
 
   intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"])
@@ -128,6 +128,7 @@ def __run_clang_tidy():
     cmd += f" -p=\"{compiler_db_folder}\""
     cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
     cmd += f" -quiet"
+    cmd += f" {filesRegex}"
 
     regis.diagnostics.log_info(f"executing: {cmd}")
 
@@ -184,12 +185,11 @@ def __build_non_test_files(configs : [str], compilers : [str]):
   build_folder = settings["build_folder"]
 
   directory = os.path.join(root_path, intermediate_folder, build_folder, "ninja")
-  projects : list[str] = __find_projects_with_suffix(directory, "")
+  projects = __find_projects_with_suffix(directory, "")
 
   for project in projects:
     # skip all test projects
-    project_lower = project.lower()
-    if "test" in project_lower or "_asan" in project_lower or "_ubsan" in project_lower or "_fuzzy" in project_lower or "_coverage" in project_lower:
+    if "test" in project or "_asan" in project or "_ubsan" in project or "_fuzzy" in project:
       continue
 
     for config in configs:
@@ -441,7 +441,7 @@ def __run_auto_tests(timeoutInSeconds):
   
   rc = 0
   for program in unit_test_programs:
-    if "test" in program or "_asan" in program or "_ubsan" in program or "_fuzzy" in program:
+    if "test" in program or "_asan" in program or "_ubsan" in program or "_fuzzy" in program or "_coverage" in program:
       continue
 
     regis.diagnostics.log_info(f"running: {Path(program).name}")
@@ -489,9 +489,9 @@ def test_include_what_you_use():
 
   __pass_results["include-what-you-use"] = rc
 
-def test_clang_tidy():
+def test_clang_tidy(filesRegex = ".*"):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __run_clang_tidy() # works
+  rc = __run_clang_tidy(filesRegex)
   if rc != 0:
     regis.diagnostics.log_err(f"clang-tidy pass failed")
 
@@ -499,110 +499,110 @@ def test_clang_tidy():
 
 def test_unit_tests():
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __generate_tests() # works
+  rc = __generate_tests()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate tests")
   __pass_results["unit tests generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_tests() # works
+  rc |= __build_tests()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build tests")
   __pass_results["unit tests building"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_unit_tests() # works
+  rc |= __run_unit_tests()
   if rc != 0:
     regis.diagnostics.log_err(f"unit tests failed")
   __pass_results["unit tests result"] = rc
 
 def test_code_coverage():
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __generate_coverage() # works
+  rc = __generate_coverage()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate coverage")
   __pass_results["coverage generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __build_coverage() # works
+  rc = __build_coverage()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build coverage")
   __pass_results["coverage building"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  programs_run = __run_coverage() # works
+  programs_run = __run_coverage()
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rawdata_files = __relocate_coverage_data(programs_run) # works
+  rawdata_files = __relocate_coverage_data(programs_run)
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  indexdata_files = __index_rawdata_files(rawdata_files) # works
+  indexdata_files = __index_rawdata_files(rawdata_files)
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __create_coverage_reports(programs_run, indexdata_files) # works
+  rc |= __create_coverage_reports(programs_run, indexdata_files)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to create coverage reports")
   __pass_results["coverage report creation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __parse_coverage_reports(indexdata_files) # works
+  rc |= __parse_coverage_reports(indexdata_files)
   if rc != 0:
     regis.diagnostics.log_err(f"Not all the code was covered")
   __pass_results["coverage report result"] = rc
 
 def test_asan():
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __generate_address_sanitizer() # works
+  rc = __generate_address_sanitizer()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate asan code")
   __pass_results["address sanitizer generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_address_sanitizer() # works
+  rc |= __build_address_sanitizer()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build asan code")
   __pass_results["address sanitizer building"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_address_sanitizer() # works
+  rc |= __run_address_sanitizer()
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with asan")
   __pass_results["address sanitizer result"] = rc
 
 def test_ubsan():
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __generate_undefined_behavior_sanitizer() # works
+  rc = __generate_undefined_behavior_sanitizer()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate ubsan code")
   __pass_results["undefined behavior sanitizer generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_undefined_behavior_sanitizer() # works
+  rc |= __build_undefined_behavior_sanitizer()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build ubsan code")
   __pass_results["undefined behavior sanitizer building"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_undefined_behavior_sanitizer() # works
+  rc |= __run_undefined_behavior_sanitizer()
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with ubsan")
   __pass_results["undefined behavior sanitizer result"] = rc
 
 def test_fuzzy_testing():
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __generate_fuzzy_testing() # works
+  rc = __generate_fuzzy_testing()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate fuzzy code")
   __pass_results["fuzzy testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_fuzzy_testing() # works
+  rc |= __build_fuzzy_testing()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build fuzzy code")
   __pass_results["fuzzy testing building"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_fuzzy_testing() # works
+  rc |= __run_fuzzy_testing()
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with fuzzy")
   __pass_results["fuzzy testing result"] = rc
@@ -611,19 +611,19 @@ def run_auto_tests(timeoutInSeconds : int):
   rc = 0
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __generate_auto_tests() # works
+  rc = __generate_auto_tests()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate auto test code")
   __pass_results["auto testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_auto_tests() # works
+  rc |= __build_auto_tests()
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build auto test code")
   __pass_results["auto testing building"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_auto_tests(timeoutInSeconds) # works
+  rc |= __run_auto_tests(timeoutInSeconds)
   if rc != 0:
     regis.diagnostics.log_err(f"auto tests failed")
   __pass_results["auto testing result"] = rc
