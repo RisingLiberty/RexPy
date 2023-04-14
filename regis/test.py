@@ -199,7 +199,7 @@ def __find_projects_with_suffix(directory, suffix):
 
   return projects
 
-def __build_test_files(projectSuffix : str, configs : list[str], compilers : list[str], intermediateDir : str):
+def __build_files(projectSuffix : str, configs : list[str], compilers : list[str], intermediateDir : str):
   should_clean = False
 
   result = [0]
@@ -249,16 +249,18 @@ def __build_non_test_files(configs : list[str], compilers : list[str], intermedi
 
   return result
 
-def __find_test_programs(folder, regex):
+def __find_programs(folder):
   intermediate_folder = os.path.join(folder)
   regis.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, intermediate_folder)}")
-  result = regis.util.find_all_files_in_folder(os.path.join(root_path, intermediate_folder), regex)
-  coverage_programs : list[str] = []
-  for res in result:
-    if regis.util.is_executable(res):
-      coverage_programs.append(res.absolute().__str__())
+  programs : list[str] = []
 
-  return coverage_programs
+  for root, dirs, files in os.walk(folder):
+    for file in files:
+      if regis.util.is_executable(file):
+        path = os.path.join(root, file)
+        programs.append(path)      
+  
+  return programs
 
 # unit tests
 def __generate_tests():
@@ -267,11 +269,11 @@ def __generate_tests():
 
 def __build_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building tests")
-  return __build_test_files("test", ["debug", "debug_opt", "release"], ["msvc", "clang"], unit_tests_intermediate_dir)
+  return __build_files("test", ["debug", "debug_opt", "release"], ["msvc", "clang"], unit_tests_intermediate_dir)
 
 def __run_unit_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running unit tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], unit_tests_intermediate_dir, "ninja"), "*test*")
+  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], unit_tests_intermediate_dir, "ninja"))
   
   rc = 0
   for program in unit_test_programs:
@@ -287,15 +289,15 @@ def __run_unit_tests():
 # coverage
 def __generate_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating coverage code")
-  return __generate_test_files(f"/generateUnitTests /enableCoverage /intermediateDir(\"{coverage_intermediate_dir}\")")
+  return __generate_test_files(f"/generateUnitTests /EnableCodeCoverage /DisableDefaultGeneration /intermediateDir(\"{coverage_intermediate_dir}\")")
 
 def __build_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building coverage code")
-  return __build_test_files("_coverage", ["coverage"], ["clang"], coverage_intermediate_dir)
+  return __build_files("", ["coverage"], ["clang"], coverage_intermediate_dir)
 
 def __run_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running coverage")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], coverage_intermediate_dir, "ninja"), "*coverage*")
+  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], coverage_intermediate_dir, "ninja"))
 
   rc = 0
   for program in unit_test_programs:
@@ -370,11 +372,11 @@ def __generate_address_sanitizer():
 
 def __build_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building address sanitizer code")
-  return __build_test_files("", ["address_sanitizer"], ["clang"], asan_intermediate_dir)
+  return __build_files("", ["address_sanitizer"], ["clang"], asan_intermediate_dir)
 
 def __run_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running address sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], asan_intermediate_dir, "ninja"), "")
+  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], asan_intermediate_dir, "ninja"))
   
   rc = 0
   for program in unit_test_programs:
@@ -407,11 +409,11 @@ def __generate_undefined_behavior_sanitizer():
 
 def __build_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building undefined behavior sanitizer code")
-  return __build_test_files("_ubsan", ["undefined_behavior_sanitizer"], ["clang"], ubsan_intermediate_dir)
+  return __build_files("_ubsan", ["undefined_behavior_sanitizer"], ["clang"], ubsan_intermediate_dir)
 
 def __run_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running undefined behavior sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], ubsan_intermediate_dir, "ninja"), "*ubsan*")
+  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], ubsan_intermediate_dir, "ninja"))
   
   rc = 0
   for program in unit_test_programs:
@@ -442,11 +444,11 @@ def __generate_fuzzy_testing():
 
 def __build_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
-  return __build_test_files("_fuzzy", ["fuzzy"], ["clang"], fuzzy_intermediate_dir)
+  return __build_files("_fuzzy", ["fuzzy"], ["clang"], fuzzy_intermediate_dir)
 
 def __run_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
-  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], fuzzy_intermediate_dir, "ninja"), "*fuzzy*")
+  fuzzy_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], fuzzy_intermediate_dir, "ninja"))
   
   rc = 0
   for program in fuzzy_programs:
@@ -484,17 +486,14 @@ def __generate_auto_tests():
 
 def __build_auto_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
-  return __build_non_test_files(["debug", "debug_opt", "release"], ["msvc", "clang"], auto_test_intermediate_dir)
+  return __build_files("regina", ["debug", "debug_opt", "release"], ["msvc", "clang"],  auto_test_intermediate_dir)
 
 def __run_auto_tests(timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], auto_test_intermediate_dir, "ninja"), "*")
+  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], auto_test_intermediate_dir, "ninja"))
   
   rc = 0
   for program in unit_test_programs:
-    if "test" in program or "_asan" in program or "_ubsan" in program or "_fuzzy" in program or "_coverage" in program:
-      continue
-
     regis.diagnostics.log_info(f"running: {Path(program).name}")
     proc = regis.util.run_subprocess(program)
 
