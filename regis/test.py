@@ -11,7 +11,7 @@
 import os
 import threading
 import time
-import signal
+import threading
 import regis.required_tools
 import regis.util
 import regis.task_raii_printing
@@ -28,6 +28,15 @@ root_path = regis.util.find_root()
 tool_paths_dict = regis.required_tools.tool_paths_dict
 settings = regis.rex_json.load_file(os.path.join(root_path, "build", "config", "settings.json"))
 __pass_results = {}
+
+iwyu_intermediate_dir = "iwyu"
+clang_tidy_intermediate_dir = "clang_tidy"
+unit_tests_intermediate_dir = "unit_tests"
+coverage_intermediate_dir = "coverage"
+asan_intermediate_dir = "asan"
+ubsan_intermediate_dir = "ubsan"
+fuzzy_intermediate_dir = "fuzzy"
+auto_test_intermediate_dir = "auto_test"
 
 def get_pass_results():
   return __pass_results
@@ -57,25 +66,49 @@ def __default_output_callback(output):
     
     regis.diagnostics.log_no_color(new_line)
 
-def __run_include_what_you_use(fixIncludes = False):
+def __run_include_what_you_use(fixIncludes = False, shouldClean = False):
+  def __run(iwyuPath, compdb, outputPath):
+      os.system(f"py {iwyuPath} -v -p={compdb} > {outputPath}")
+      regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
+    
+
   task_print = regis.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
 
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), "")
+  intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"], iwyu_intermediate_dir)
 
-  intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"])
+  if shouldClean:
+    regis.util.remove_folders_recursive(intermediate_folder)
+
+  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\")")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
     
+  threads : list[threading.Thread] = []
+
   for compiler_db in result:
     iwyu_path = tool_paths_dict["include_what_you_use_path"]
     iwyu_tool_path = os.path.join(Path(iwyu_path).parent, "iwyu_tool.py")
     fix_includes_path = os.path.join(Path(iwyu_path).parent, "fix_includes.py")
     compiler_db_folder = Path(compiler_db).parent
     output_path = os.path.join(compiler_db_folder, "iwyu_output.log")
-    os.system(f"py {iwyu_tool_path} -v -p={compiler_db_folder} > {output_path}") # needs to use os.system or iwyu will parse the command incorrectly
-    if fixIncludes:
-      os.system(f"py {fix_includes_path} --update_comments --safe_headers < {output_path}")
     
-    regis.diagnostics.log_info(f"include what you use info saved to {output_path}")
+    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path))
+    thread.start()
+    threads.append(thread)
+
+  for thread in threads:
+    thread.join()
+
+  threads.clear()
+
+  for compiler_db in result:
+    if fixIncludes:
+      thread = threading.Thread(target=lambda: os.system(f"py {fix_includes_path} --update_comments --safe_headers < {output_path}"))
+      thread.start()
+      threads.append(thread)
+
+  for thread in threads:
+    thread.join()
+  
 
   return 0
 
@@ -91,25 +124,33 @@ def __get_project_name(compdbPath):
   
   return ""
 
-def __run_clang_tidy(filesRegex):
+def __run_clang_tidy(filesRegex, shouldClean = False):
+
+  rc = [0]
+  def __run(cmd : str, rc : int):
+    regis.diagnostics.log_info(f"executing: {cmd}")
+    proc = regis.util.run_subprocess_with_callback(cmd, __default_output_callback)
+    new_rc = regis.util.wait_for_process(proc)
+    if new_rc != 0:
+      regis.diagnostics.log_err(f"clang-tidy failed for {compiler_db}")
+      regis.diagnostics.log_err(f"config file: {config_file_path}")
+    rc[0] |= new_rc
+
   task_print = regis.task_raii_printing.TaskRaiiPrint("running clang-tidy")
 
-  intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"])
+  intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"], clang_tidy_intermediate_dir)
 
-  # first clean all the compiler dbs that currently exist.
-  # this makes sure that when we query the compiler dbs after the generation
-  # are only those that are needed for clang-tidy
-  result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
-  for compiler_db in result:
-    os.remove(compiler_db)
+  if shouldClean:
+    regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"))
+  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\")")
 
   # get the compiler dbs that are just generated
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
 
-  rc = 0
+  threads : list[threading.Thread] = []
+  threads_to_use = 5
   for compiler_db in result:
     script_path = os.path.dirname(__file__)
     clang_tidy_path = tool_paths_dict["clang_tidy_path"]
@@ -120,7 +161,7 @@ def __run_clang_tidy(filesRegex):
     project_name = __get_project_name(compiler_db_folder)
     header_filters = regis.util.retrieve_header_filters(compiler_db_folder, project_name)
     header_filters_regex = regis.util.create_header_filter_regex(header_filters)
-
+    
     cmd = f"py \"{script_path}/run_clang_tidy.py\""
     cmd += f" -clang-tidy-binary=\"{clang_tidy_path}\""
     cmd += f" -clang-apply-replacements-binary=\"{clang_apply_replacements_path}\""
@@ -128,18 +169,18 @@ def __run_clang_tidy(filesRegex):
     cmd += f" -p=\"{compiler_db_folder}\""
     cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
     cmd += f" -quiet"
+    cmd += f" -j={threads_to_use}"
     cmd += f" {filesRegex}"
 
-    regis.diagnostics.log_info(f"executing: {cmd}")
+    thread = threading.Thread(target=__run, args=(cmd,rc,))
+    thread.start()
 
-    proc = regis.util.run_subprocess_with_callback(cmd, __default_output_callback)
-    new_rc = regis.util.wait_for_process(proc)
-    if new_rc != 0:
-      regis.diagnostics.log_err(f"clang-tidy failed for {compiler_db}")
-      regis.diagnostics.log_err(f"config file: {config_file_path}")
-    rc |= new_rc
+    threads.append(thread)
 
-  return rc
+  for thread in threads:
+    thread.join()
+
+  return rc[0]
 
 def __generate_test_files(sharpmakeArgs):
   root = regis.util.find_root()
@@ -158,25 +199,35 @@ def __find_projects_with_suffix(directory, suffix):
 
   return projects
 
-def __build_test_files(projectSuffix : str, configs : [str], compilers : [str]):
+def __build_test_files(projectSuffix : str, configs : list[str], compilers : list[str], intermediateDir : str):
   should_clean = False
 
-  result = 0
+  result = [0]
+
+  def __run(prj, cfg, comp, intermediateDir, shouldClean, result):
+    result[0] |= regis.build.new_build(prj, cfg, comp, intermediateDir, shouldClean)
 
   intermediate_folder = settings["intermediate_folder"]
   build_folder = settings["build_folder"]
 
-  directory = os.path.join(root_path, intermediate_folder, build_folder, "ninja")
+  directory = os.path.join(root_path, intermediate_folder, build_folder, intermediateDir)
   projects = __find_projects_with_suffix(directory, projectSuffix)
+
+  threads : list[threading.Thread] = []
 
   for project in projects:
     for config in configs:
       for compiler in compilers:
-        result |= regis.build.new_build(project, config, compiler, should_clean)
+        thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result))
+        thread.start()
+        threads.append(thread)
 
-  return result
+  for thread in threads:
+    thread.join()
 
-def __build_non_test_files(configs : [str], compilers : [str]):
+  return result[0]
+
+def __build_non_test_files(configs : list[str], compilers : list[str], intermediateDir : str):
   should_clean = False
 
   result = 0
@@ -184,17 +235,17 @@ def __build_non_test_files(configs : [str], compilers : [str]):
   intermediate_folder = settings["intermediate_folder"]
   build_folder = settings["build_folder"]
 
-  directory = os.path.join(root_path, intermediate_folder, build_folder, "ninja")
+  directory = os.path.join(root_path, intermediate_folder, build_folder, intermediateDir, "ninja")
   projects = __find_projects_with_suffix(directory, "")
 
   for project in projects:
     # skip all test projects
-    if "test" in project or "_asan" in project or "_ubsan" in project or "_fuzzy" in project:
+    if "test" in project or "_asan" in project or "_ubsan" in project or "_fuzzy" in project :
       continue
 
     for config in configs:
       for compiler in compilers:
-        result |= regis.build.new_build(project, config, compiler, should_clean)
+        result |= regis.build.new_build(project, config, compiler, intermediateDir, should_clean)
 
   return result
 
@@ -212,15 +263,15 @@ def __find_test_programs(folder, regex):
 # unit tests
 def __generate_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating unit test projects")
-  return __generate_test_files("/generateUnitTests")
+  return __generate_test_files(f"/noClangTools /generateUnitTests /DisableDefaultGeneration /intermediateDir(\"{unit_tests_intermediate_dir}\")")
 
 def __build_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building tests")
-  return __build_test_files("test", ["debug", "debug_opt", "release"], ["msvc", "clang"])
+  return __build_test_files("test", ["debug", "debug_opt", "release"], ["msvc", "clang"], unit_tests_intermediate_dir)
 
 def __run_unit_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running unit tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*test*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], unit_tests_intermediate_dir, "ninja"), "*test*")
   
   rc = 0
   for program in unit_test_programs:
@@ -236,15 +287,15 @@ def __run_unit_tests():
 # coverage
 def __generate_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating coverage code")
-  return __generate_test_files("/generateUnitTests /enableCoverage")
+  return __generate_test_files(f"/generateUnitTests /enableCoverage /intermediateDir(\"{coverage_intermediate_dir}\")")
 
 def __build_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building coverage code")
-  return __build_test_files("_coverage", ["coverage"], ["clang"])
+  return __build_test_files("_coverage", ["coverage"], ["clang"], coverage_intermediate_dir)
 
 def __run_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running coverage")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*coverage*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], coverage_intermediate_dir, "ninja"), "*coverage*")
 
   rc = 0
   for program in unit_test_programs:
@@ -315,15 +366,15 @@ def __get_coverage_rawdata_filename(program : str):
 # asan
 def __generate_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating address sanitizer code")
-  return __generate_test_files("/generateUnitTests /enableAddressSanitizer")
+  return __generate_test_files(f"/noClangTools /generateUnitTests /EnableAsan /DisableDefaultGeneration /intermediateDir(\"{asan_intermediate_dir}\")")
 
 def __build_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building address sanitizer code")
-  return __build_test_files("_asan", ["address_sanitizer"], ["clang"])
+  return __build_test_files("", ["address_sanitizer"], ["clang"], asan_intermediate_dir)
 
 def __run_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running address sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*asan*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], asan_intermediate_dir, "ninja"), "")
   
   rc = 0
   for program in unit_test_programs:
@@ -352,15 +403,15 @@ def __run_address_sanitizer():
 # ubsan
 def __generate_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating undefined behavior sanitizer code")
-  return __generate_test_files("/generateUnitTests /enableUBSanitizer")
+  return __generate_test_files(f"/generateUnitTests /EnableUBsan  /DisableDefaultGeneration /intermediateDir(\"{ubsan_intermediate_dir}\")")
 
 def __build_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building undefined behavior sanitizer code")
-  return __build_test_files("_ubsan", ["undefined_behavior_sanitizer"], ["clang"])
+  return __build_test_files("_ubsan", ["undefined_behavior_sanitizer"], ["clang"], ubsan_intermediate_dir)
 
 def __run_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running undefined behavior sanitizer tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*ubsan*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], ubsan_intermediate_dir, "ninja"), "*ubsan*")
   
   rc = 0
   for program in unit_test_programs:
@@ -387,15 +438,15 @@ def __run_undefined_behavior_sanitizer():
 # fuzzy
 def __generate_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating fuzzy testing code")
-  return __generate_test_files("/enableFuzzyTesting")
+  return __generate_test_files(f"/EnableFuzzyTests /DisableDefaultGeneration /intermediateDir(\"{fuzzy_intermediate_dir}\")")
 
 def __build_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
-  return __build_test_files("_fuzzy", ["fuzzy"], ["clang"])
+  return __build_test_files("_fuzzy", ["fuzzy"], ["clang"], fuzzy_intermediate_dir)
 
 def __run_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
-  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*fuzzy*")
+  fuzzy_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], fuzzy_intermediate_dir, "ninja"), "*fuzzy*")
   
   rc = 0
   for program in fuzzy_programs:
@@ -429,15 +480,15 @@ def __run_fuzzy_testing():
 # auto tests
 def __generate_auto_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating auto tests")
-  return __generate_test_files("/noClangTools")
+  return __generate_test_files(f"/noClangTools /intermediateDir(\"{auto_test_intermediate_dir}\")")
 
 def __build_auto_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
-  return __build_non_test_files(["debug", "debug_opt", "release"], ["msvc", "clang"])
+  return __build_non_test_files(["debug", "debug_opt", "release"], ["msvc", "clang"], auto_test_intermediate_dir)
 
 def __run_auto_tests(timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
-  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], "ninja"), "*")
+  unit_test_programs = __find_test_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], auto_test_intermediate_dir, "ninja"), "*")
   
   rc = 0
   for program in unit_test_programs:

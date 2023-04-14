@@ -24,11 +24,11 @@ def get_local_branchname():
   return output.strip('\n')
 
 def cache_commit_changes(branch : str, files : list[str]):
-  changes_cache_filepath = os.path.join(regis.util.find_root(), changes_cache_filepath)
+  full_changes_cache_filepath = os.path.join(regis.util.find_root(), changes_cache_filepath)
 
   cached_changes = {}
-  if os.path.exists(changes_cache_filepath):
-    cached_changes = regis.rex_json.load_file(changes_cache_filepath)
+  if os.path.exists(full_changes_cache_filepath):
+    cached_changes = regis.rex_json.load_file(full_changes_cache_filepath)
   
   if not branch in cached_changes:
     cached_changes[branch] = []
@@ -43,10 +43,10 @@ def cache_commit_changes(branch : str, files : list[str]):
   regis.rex_json.save_file(changes_cache_filepath, cached_changes)   
 
 def get_cached_changes(branch):
-  changes_cache_filepath = os.path.join(regis.util.find_root(), changes_cache_filepath)
+  full_changes_cache_filepath = os.path.join(regis.util.find_root(), changes_cache_filepath)
 
-  if os.path.exists(changes_cache_filepath):
-    cached_changes = regis.rex_json.load_file(changes_cache_filepath)
+  if os.path.exists(full_changes_cache_filepath):
+    cached_changes = regis.rex_json.load_file(full_changes_cache_filepath)
     local_branch = branch
     
     if local_branch in cached_changes:

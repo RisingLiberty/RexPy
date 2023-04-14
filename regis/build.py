@@ -10,8 +10,8 @@ from pathlib import Path
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
 
-def __launch_new_build(project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : [str]):
-  project_file_path = regis.util.find_ninja_project(project)
+def __launch_new_build(project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = ""):
+  project_file_path = regis.util.find_ninja_project(project, intermediateDir)
 
   if project_file_path == "":
     regis.diagnostics.log_err(f"project '{project}' was not found, have you generated it?")
@@ -45,8 +45,8 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
   proc.wait()
   return proc.returncode, alreadyBuild
 
-def new_build(project : str, config : str, compiler : str, shouldClean : bool):
+def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False):
   already_build = []
-  res, build_projects = __launch_new_build(project, config, compiler, shouldClean, already_build)
+  res, build_projects = __launch_new_build(project, config, compiler, shouldClean, already_build, intermediateDir)
   return res
   
