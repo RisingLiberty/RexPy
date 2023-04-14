@@ -28,6 +28,7 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
     return 1, alreadyBuild
   
   if config not in json_blob[project_lower][compiler_lower]:
+    regis.diagnostics.log_err(f"error in {project_file_path}")
     regis.diagnostics.log_err(f"no config '{config}' found in project '{project}' for compiler '{compiler}'")
     return 1, alreadyBuild
 
