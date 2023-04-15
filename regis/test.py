@@ -189,17 +189,17 @@ def __generate_test_files(sharpmakeArgs):
   proc.wait()
   return proc.returncode
 
-def __find_projects_with_suffix(directory, suffix):
+def __find_projects_with_suffix(directory):
   projects = []
   for root, dirs, files in os.walk(directory):
     for file in files:
       filename = Path(file).name
-      if filename.lower().endswith(f"{suffix}.nproj".lower()):
+      if filename.lower().endswith(f".nproj".lower()):
         projects.append(Path(filename).stem)
 
   return projects
 
-def __build_files(projectSuffix : str, configs : list[str], compilers : list[str], intermediateDir : str):
+def __build_files(configs : list[str], compilers : list[str], intermediateDir : str, projectsToBuild : list[str] = ""):
   should_clean = False
 
   result = [0]
@@ -211,43 +211,22 @@ def __build_files(projectSuffix : str, configs : list[str], compilers : list[str
   build_folder = settings["build_folder"]
 
   directory = os.path.join(root_path, intermediate_folder, build_folder, intermediateDir)
-  projects = __find_projects_with_suffix(directory, projectSuffix)
+  projects = __find_projects_with_suffix(directory)
 
   threads : list[threading.Thread] = []
 
   for project in projects:
-    for config in configs:
-      for compiler in compilers:
-        thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result))
-        thread.start()
-        threads.append(thread)
+    if len(projectsToBuild) == 0 or project.lower() in (project_to_build.lower() for project_to_build in projectsToBuild):
+      for config in configs:
+        for compiler in compilers:
+          thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result))
+          thread.start()
+          threads.append(thread)
 
   for thread in threads:
     thread.join()
 
   return result[0]
-
-def __build_non_test_files(configs : list[str], compilers : list[str], intermediateDir : str):
-  should_clean = False
-
-  result = 0
-
-  intermediate_folder = settings["intermediate_folder"]
-  build_folder = settings["build_folder"]
-
-  directory = os.path.join(root_path, intermediate_folder, build_folder, intermediateDir, "ninja")
-  projects = __find_projects_with_suffix(directory, "")
-
-  for project in projects:
-    # skip all test projects
-    if "test" in project or "_asan" in project or "_ubsan" in project or "_fuzzy" in project :
-      continue
-
-    for config in configs:
-      for compiler in compilers:
-        result |= regis.build.new_build(project, config, compiler, intermediateDir, should_clean)
-
-  return result
 
 def __find_programs(folder):
   intermediate_folder = os.path.join(folder)
@@ -267,9 +246,9 @@ def __generate_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating unit test projects")
   return __generate_test_files(f"/noClangTools /generateUnitTests /DisableDefaultGeneration /intermediateDir(\"{unit_tests_intermediate_dir}\")")
 
-def __build_tests():
+def __build_tests(projects):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building tests")
-  return __build_files("test", ["debug", "debug_opt", "release"], ["msvc", "clang"], unit_tests_intermediate_dir)
+  return __build_files(["debug", "debug_opt", "release"], ["msvc", "clang"], unit_tests_intermediate_dir, projects)
 
 def __run_unit_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running unit tests")
@@ -293,7 +272,7 @@ def __generate_coverage():
 
 def __build_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("building coverage code")
-  return __build_files("", ["coverage"], ["clang"], coverage_intermediate_dir)
+  return __build_files(["coverage"], ["clang"], coverage_intermediate_dir, projects)
 
 def __run_coverage():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running coverage")
@@ -370,9 +349,9 @@ def __generate_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating address sanitizer code")
   return __generate_test_files(f"/noClangTools /generateUnitTests /EnableAsan /DisableDefaultGeneration /intermediateDir(\"{asan_intermediate_dir}\")")
 
-def __build_address_sanitizer():
+def __build_address_sanitizer(projects):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building address sanitizer code")
-  return __build_files("", ["address_sanitizer"], ["clang"], asan_intermediate_dir)
+  return __build_files(["address_sanitizer"], ["clang"], asan_intermediate_dir, projects)
 
 def __run_address_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running address sanitizer tests")
@@ -407,9 +386,9 @@ def __generate_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating undefined behavior sanitizer code")
   return __generate_test_files(f"/generateUnitTests /EnableUBsan  /DisableDefaultGeneration /intermediateDir(\"{ubsan_intermediate_dir}\")")
 
-def __build_undefined_behavior_sanitizer():
+def __build_undefined_behavior_sanitizer(projects):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building undefined behavior sanitizer code")
-  return __build_files("_ubsan", ["undefined_behavior_sanitizer"], ["clang"], ubsan_intermediate_dir)
+  return __build_files(["undefined_behavior_sanitizer"], ["clang"], ubsan_intermediate_dir, projects)
 
 def __run_undefined_behavior_sanitizer():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running undefined behavior sanitizer tests")
@@ -442,9 +421,9 @@ def __generate_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating fuzzy testing code")
   return __generate_test_files(f"/EnableFuzzyTests /DisableDefaultGeneration /intermediateDir(\"{fuzzy_intermediate_dir}\")")
 
-def __build_fuzzy_testing():
+def __build_fuzzy_testing(projects):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
-  return __build_files("_fuzzy", ["fuzzy"], ["clang"], fuzzy_intermediate_dir)
+  return __build_files(["fuzzy"], ["clang"], fuzzy_intermediate_dir, projects)
 
 def __run_fuzzy_testing():
   task_print = regis.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
@@ -484,9 +463,9 @@ def __generate_auto_tests():
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating auto tests")
   return __generate_test_files(f"/noClangTools /intermediateDir(\"{auto_test_intermediate_dir}\")")
 
-def __build_auto_tests():
+def __build_auto_tests(configs, compilers, projects):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
-  return __build_files("regina", ["debug", "debug_opt", "release"], ["msvc", "clang"],  auto_test_intermediate_dir)
+  return __build_files(configs, compilers, auto_test_intermediate_dir, projects)
 
 def __run_auto_tests(timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
@@ -547,7 +526,7 @@ def test_clang_tidy(filesRegex = ".*"):
 
   __pass_results["clang-tidy"] = rc
 
-def test_unit_tests():
+def test_unit_tests(projects):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = __generate_tests()
   if rc != 0:
@@ -555,7 +534,7 @@ def test_unit_tests():
   __pass_results["unit tests generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_tests()
+  rc |= __build_tests(projects)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build tests")
   __pass_results["unit tests building"] = rc
@@ -566,7 +545,7 @@ def test_unit_tests():
     regis.diagnostics.log_err(f"unit tests failed")
   __pass_results["unit tests result"] = rc
 
-def test_code_coverage():
+def test_code_coverage(projects):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = __generate_coverage()
   if rc != 0:
@@ -574,7 +553,7 @@ def test_code_coverage():
   __pass_results["coverage generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __build_coverage()
+  rc = __build_coverage(projects)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build coverage")
   __pass_results["coverage building"] = rc
@@ -600,7 +579,7 @@ def test_code_coverage():
     regis.diagnostics.log_err(f"Not all the code was covered")
   __pass_results["coverage report result"] = rc
 
-def test_asan():
+def test_asan(projects):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = __generate_address_sanitizer()
   if rc != 0:
@@ -608,7 +587,7 @@ def test_asan():
   __pass_results["address sanitizer generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_address_sanitizer()
+  rc |= __build_address_sanitizer(projects)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build asan code")
   __pass_results["address sanitizer building"] = rc
@@ -619,7 +598,7 @@ def test_asan():
     regis.diagnostics.log_err(f"invalid code found with asan")
   __pass_results["address sanitizer result"] = rc
 
-def test_ubsan():
+def test_ubsan(projects):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = __generate_undefined_behavior_sanitizer()
   if rc != 0:
@@ -627,7 +606,7 @@ def test_ubsan():
   __pass_results["undefined behavior sanitizer generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_undefined_behavior_sanitizer()
+  rc |= __build_undefined_behavior_sanitizer(projects)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build ubsan code")
   __pass_results["undefined behavior sanitizer building"] = rc
@@ -638,7 +617,7 @@ def test_ubsan():
     regis.diagnostics.log_err(f"invalid code found with ubsan")
   __pass_results["undefined behavior sanitizer result"] = rc
 
-def test_fuzzy_testing():
+def test_fuzzy_testing(projects):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = __generate_fuzzy_testing()
   if rc != 0:
@@ -646,7 +625,7 @@ def test_fuzzy_testing():
   __pass_results["fuzzy testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_fuzzy_testing()
+  rc |= __build_fuzzy_testing(projects)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build fuzzy code")
   __pass_results["fuzzy testing building"] = rc
@@ -657,7 +636,7 @@ def test_fuzzy_testing():
     regis.diagnostics.log_err(f"invalid code found with fuzzy")
   __pass_results["fuzzy testing result"] = rc
 
-def run_auto_tests(timeoutInSeconds : int):
+def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int):
   rc = 0
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -667,7 +646,7 @@ def run_auto_tests(timeoutInSeconds : int):
   __pass_results["auto testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_auto_tests()
+  rc |= __build_auto_tests(configs, compilers, projects)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build auto test code")
   __pass_results["auto testing building"] = rc
