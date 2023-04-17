@@ -1,188 +1,106 @@
 import os
-import subprocess
-from pathlib import Path
-import regis.diagnostics
+
+import regis.util
 import regis.rex_json
+import regis.diagnostics
 
-def create_version_file(directory : str, tag : str):
-    version = {
-        "tag": tag
-    }
+changes_cache_filepath = os.path.join(".git", "file_changed")
 
-    path = os.path.join(directory, "version.json")
-    regis.rex_json.save_file(path, version)
-
-def load_version_file(directory):
-  version_file = os.path.join(directory, "version.json")
-  if os.path.exists(version_file):
-    version_data = regis.rex_json.load_file(version_file)           
-    if version_data != None:
-      return version_data["tag"]
-
-  return ''
-
-def env_paths():
-  envPath = os.environ["PATH"]
-  paths = envPath.split(os.pathsep)
-  return paths
-
-def retrieve_header_filters(targetDir, projectName):
-  filepath = os.path.join(targetDir, f"{projectName}.project")
-
-  if not os.path.exists(filepath):
-    raise Exception(f"clang tools project file doesn't exist, please check your sharpmake scripts: {filepath}")
-
-  jsonBlob = regis.rex_json.load_file(filepath)
-  return jsonBlob["HeaderFilters"]
-
-def create_header_filter_regex(headerFilters : list[str]):
-  res = ""
-
-  for filter in headerFilters:
-    res += "("
-    res += filter
-    res += ")|"
-
-  res = res.removesuffix("|")
-  return res
-
-def find_file_in_folder(file, path : str):
-  fileToFind = file.lower()
-  subFilesOrFolders = os.listdir(path)
-  for fileOrFolder in subFilesOrFolders:
-    absPath = os.path.join(path, fileOrFolder)
-    if os.path.isfile(absPath):
-      file_name = Path(absPath).name.lower()
-      if file_name == fileToFind:
-        return absPath
-  
-  return ''
-
-def find_file_in_paths(file, directories : list[str]):
-  for path in directories:
-    if not os.path.exists(path):
-      continue
-
-    result = find_file_in_folder(file, path)
-    if result != '':
-      return result
-
-  return ''
-
-def find_directory_in_paths(dir : str, directories : list[str]):
-  dir = dir.replace('\\', '/')
-  folders = dir.split('/')  
-  num_folders = len(folders)
-
-  for path in directories:
-    path = path.replace('\\', '/')
-    path_folders = path.split('/')
-
-    dir_idx = -1
-
-    if os.path.exists(os.path.join(path, dir)):
-      return os.path.join(path, dir)
-
-    dir_idx = num_folders - 1
-    path_idx = len(path_folders) - 1
-    if (len(path_folders) < num_folders):
-      continue
-
-    while dir_idx >= 0:
-      dir_folder = folders[dir_idx]
-      path_folder = path_folders[path_idx]
-      
-      if dir_folder != path_folder:
-        break
-
-      dir_idx -= 1
-      path_idx -= 1
-
-    if dir_idx == -1:
-      if os.path.exists(path):
-        return path
-      else:
-        diagnostics.log_err(f"matching directory found, but doesn't exist: {path}")
-
-  return None
-
-def find_in_parent(path, toFind):
-  curr_path = path
-
-  while toFind not in os.listdir(curr_path):
-    if Path(curr_path).parent == curr_path:
-      diagnostics.log_err(f"{toFind} not found in parents of {path}")
-      return ''
-
-    curr_path = Path(curr_path).parent
-
-  return curr_path
-
-def find_root():
-  res = find_in_parent(os.getcwd(), "source")
-  if (res == ''):
-    regis.diagnostics.log_err(f"root not found")
-
-  return res
-
-def find_files_with_extension(path : str, extension : str):
-  files = os.listdir(path)
-  files_with_extension = []
-  for file in files:
-    if Path(file).suffix == extension:
-      files_with_extension.append(file)
-
-  return files_with_extension
-
-def is_windows():
-  return os.name == 'nt'
-
-def run_subprocess(command):
-  proc = subprocess.Popen(command)
-  return proc
-
-def run_and_get_output(command):
-  proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  output, errc = proc.communicate()
-
-  return output.decode('utf-8'), errc
-
-def run_subprocess_with_working_dir(command, workingDir):
-  proc = subprocess.Popen(command, cwd=workingDir)
-  return proc
-
-def run_subprocess_with_callback(command, callback):
-  proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  callback(proc.stdout)
-  callback(proc.stderr)
-  return proc
-
-def wait_for_process(process):
-  streamdata = process.communicate()[0]
-  return process.returncode  
-
-def is_executable(path):
-  if is_windows():
-    if Path(path).suffix == ".exe":
-      return True
+def __zsplit(s: str) -> list[str]:
+  s = s.strip('\0')
+  s = s.strip('\n')
+  if s:
+      return s.split('\n')
   else:
-    return os.access(path, os.X_OK)
-
-def find_all_files_in_folder(dir, toFindRegex):
-  return list(Path(dir).rglob(toFindRegex))
-
-def find_ninja_project(project):
-  root = find_root()
-  project_file_name = f"{project}.nproj"
-  settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
-  intermediate_folder = settings["intermediate_folder"]
-  build_folder = settings["build_folder"]
-
-  directory = os.path.join(root, intermediate_folder, build_folder, "ninja")
+      return []
   
-  for root_, dirs, files in os.walk(directory):
-    for file in files:
-      if Path(file).name.lower() == project_file_name.lower():
-        return os.path.join(root_, file)
+def get_staged_files():
+  cmd = 'git diff --staged --name-only --no-ext-diff'
+  output, errc = regis.util.run_and_get_output(cmd)
+  return __zsplit(output)
 
-  return ""
+def get_unstaged_files():
+  cmd = 'git diff --name-only --no-ext-diff'
+  output, errc = regis.util.run_and_get_output(cmd)
+  return __zsplit(output)
+
+def get_local_branchname():
+  cmd = 'git rev-parse --abbrev-ref HEAD'
+  output, errc = regis.util.run_and_get_output(cmd)
+  return output.strip('\n')
+
+def cache_commit_changes(branch : str, files : list[str]):
+  full_changes_cache_filepath = os.path.join(regis.util.find_root(), changes_cache_filepath)
+
+  cached_changes = {}
+  if os.path.exists(full_changes_cache_filepath):
+    cached_changes = regis.rex_json.load_file(full_changes_cache_filepath)
+  
+  if not branch in cached_changes:
+    cached_changes[branch] = []
+
+  changes_in_branch = cached_changes[branch]
+
+  for file in files:
+    if file not in changes_in_branch:
+      changes_in_branch.append(file)
+      print(f"adding file")
+
+  regis.rex_json.save_file(changes_cache_filepath, cached_changes)   
+
+def get_cached_changes(branch):
+  full_changes_cache_filepath = os.path.join(regis.util.find_root(), changes_cache_filepath)
+
+  if os.path.exists(full_changes_cache_filepath):
+    cached_changes = regis.rex_json.load_file(full_changes_cache_filepath)
+    local_branch = branch
+    
+    if local_branch in cached_changes:
+      return cached_changes[local_branch]
+    
+  return []
+
+def stash_uncommitted_changes(stashName):
+  cmd = f"git stash save {stashName} -k"
+  output, errc = regis.util.run_and_get_output(cmd)
+  regis.diagnostics.log_no_color(output)
+  return output
+
+def unstash(stashName):
+  stash_idx, stash_branch, stash_name = find_stash(stashName)
+  cmd = f"git stash apply {stash_idx}"
+  output, errc = regis.util.run_and_get_output(cmd)
+  regis.diagnostics.log_no_color(output)
+  return output
+
+def get_stash_list():
+  cmd = f"git stash list"
+  output, errc = regis.util.run_and_get_output(cmd)
+  return __zsplit(output)
+
+def find_stash(stashName):
+  stashes = get_stash_list()
+  branch_name = get_local_branchname()
+  
+  # stash format: stash@{0}: On devops/githooks: pre-push
+  for stash in stashes:
+    colon_idx = stash.find(':')
+    stash_idx = stash[0: colon_idx]
+    num_to_skip = len(": On ")
+    branch_start = colon_idx + num_to_skip
+    colon_idx = stash.find(':', colon_idx + 1)
+    stash_branch = stash[branch_start: colon_idx]
+    num_to_skip = len(": ")
+    name_start = colon_idx + num_to_skip
+    stash_name = stash[name_start: len(stash)]
+
+    if (stashName.lower() == stash_name.lower()):
+      return stash_idx, stash_branch, stash_name
+    
+  return None, None, None
+
+def remove_stash(stashName):
+  stash_idx, stash_branch, stash_name = find_stash(stashName)
+  cmd = f"git stash drop {stash_idx}"
+  output, errc = regis.util.run_and_get_output(cmd)
+  regis.diagnostics.log_no_color(output)
