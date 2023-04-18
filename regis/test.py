@@ -12,6 +12,7 @@ import os
 import threading
 import time
 import threading
+import re
 import regis.required_tools
 import regis.util
 import regis.task_raii_printing
@@ -42,15 +43,30 @@ def get_pass_results():
   return __pass_results
 
 def __is_in_line(line : str, keywords : list[str]):
+  regex = "((error).(cpp))|((error).(h))"
+
   for keyword in keywords:
     if keyword.lower() in line.lower():
-      return True
+      return not re.search(regex, line.lower()) # make sure that lines like 'error.cpp' don't return positive
 
   return False
 
-def __default_output_callback(output):
+def __default_output_callback(pid, output, isStdErr, filterLines):
   error_keywords = ["failed", "error"]
   warn_keywords = ["warning"]
+
+  logs_dir = os.path.join(settings["intermediate_folder"], "logs")
+  filename = f"output_{pid}.log"
+  if isStdErr:
+    filename f"errors_{pid}.log"
+
+  filepath = os.path.join(logs_dir, filename)
+  if os.path.exists(filepath):
+    os.remove(filepath)
+  elif not os.path.exists(logs_dir):
+    os.makedirs(logs_dir)
+
+  f = open(filepath, "w+")
 
   for line in iter(output.readline, b''):
     new_line : str = line.decode('UTF-8')
@@ -59,12 +75,12 @@ def __default_output_callback(output):
 
     if __is_in_line(new_line, error_keywords):
       regis.diagnostics.log_err(new_line)
-      continue
     elif __is_in_line(new_line, warn_keywords):
       regis.diagnostics.log_warn(new_line)
-      continue
     
-    regis.diagnostics.log_no_color(new_line)
+    f.write(f"{new_line}\n")
+
+  regis.diagnostics.log_info(f"full output saved to {filepath}")
 
 def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
   def __run(iwyuPath, compdb, outputPath):
@@ -133,12 +149,12 @@ def __get_project_name(compdbPath):
   
   return ""
 
-def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False):
+def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False):
 
   rc = [0]
   def __run(cmd : str, rc : int):
     regis.diagnostics.log_info(f"executing: {cmd}")
-    proc = regis.util.run_subprocess_with_callback(cmd, __default_output_callback)
+    proc = regis.util.run_subprocess_with_callback(cmd, __default_output_callback, filterLines)
     new_rc = regis.util.wait_for_process(proc)
     if new_rc != 0:
       regis.diagnostics.log_err(f"clang-tidy failed for {compiler_db}")
@@ -575,9 +591,9 @@ def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool =
 
   __pass_results["include-what-you-use"] = rc
 
-def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False):
+def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __run_clang_tidy(filesRegex, shouldClean, singleThreaded)
+  rc = __run_clang_tidy(filesRegex, shouldClean, singleThreaded, filterLines)
   if rc != 0:
     regis.diagnostics.log_err(f"clang-tidy pass failed")
 

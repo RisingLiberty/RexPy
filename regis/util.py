@@ -1,5 +1,6 @@
 import os
 import subprocess
+import shutil
 from pathlib import Path
 import regis.diagnostics
 import regis.rex_json
@@ -151,10 +152,10 @@ def run_subprocess_with_working_dir(command, workingDir):
   proc = subprocess.Popen(command, cwd=workingDir)
   return proc
 
-def run_subprocess_with_callback(command, callback):
+def run_subprocess_with_callback(command, callback, filterLines):
   proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-  callback(proc.stdout)
-  callback(proc.stderr)
+  callback(proc.pid, proc.stdout, False, filterLines)
+  callback(proc.pid, proc.stderr, True, filterLines)
   return proc
 
 def wait_for_process(process):
@@ -171,14 +172,14 @@ def is_executable(path):
 def find_all_files_in_folder(dir, toFindRegex):
   return list(Path(dir).rglob(toFindRegex))
 
-def find_ninja_project(project):
+def find_ninja_project(project : str, intermediateDir : str = ""):
   root = find_root()
   project_file_name = f"{project}.nproj"
   settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
   intermediate_folder = settings["intermediate_folder"]
   build_folder = settings["build_folder"]
 
-  directory = os.path.join(root, intermediate_folder, build_folder, "ninja")
+  directory = os.path.join(root, intermediate_folder, build_folder, intermediateDir, "ninja")
   
   for root_, dirs, files in os.walk(directory):
     for file in files:
@@ -186,3 +187,7 @@ def find_ninja_project(project):
         return os.path.join(root_, file)
 
   return ""
+
+def remove_folders_recursive(dir : str):
+  if os.path.exists(dir):
+    shutil.rmtree(dir)
