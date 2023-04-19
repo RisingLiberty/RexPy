@@ -66,23 +66,23 @@ def __default_output_callback(pid, output, isStdErr, filterLines):
   elif not os.path.exists(logs_dir):
     os.makedirs(logs_dir)
 
-  f = open(filepath, "w+")
+  with open(filepath, "a+") as f:
 
-  for line in iter(output.readline, b''):
-    new_line : str = line.decode('UTF-8')
-    if new_line.endswith('\n'):
-      new_line = new_line.removesuffix('\n')
+    for line in iter(output.readline, b''):
+      new_line : str = line.decode('UTF-8')
+      if new_line.endswith('\n'):
+        new_line = new_line.removesuffix('\n')
 
-    if __is_in_line(new_line, error_keywords):
-      regis.diagnostics.log_err(new_line)
-    elif __is_in_line(new_line, warn_keywords):
-      regis.diagnostics.log_warn(new_line)
-    elif not filterLines:
-      regis.diagnostics.log_no_color(new_line)
-    
-    f.write(f"{new_line}\n")
+      if __is_in_line(new_line, error_keywords):
+        regis.diagnostics.log_err(new_line)
+      elif __is_in_line(new_line, warn_keywords):
+        regis.diagnostics.log_warn(new_line)
+      elif not filterLines:
+        regis.diagnostics.log_no_color(new_line)
+      
+      f.write(f"{new_line}\n")
 
-  regis.diagnostics.log_info(f"full output saved to {filepath}")
+    regis.diagnostics.log_info(f"full output saved to {filepath}")
 
 def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
   def __run(iwyuPath, compdb, outputPath):
