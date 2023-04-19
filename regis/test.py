@@ -58,7 +58,7 @@ def __default_output_callback(pid, output, isStdErr, filterLines):
   logs_dir = os.path.join(settings["intermediate_folder"], "logs")
   filename = f"output_{pid}.log"
   if isStdErr:
-    filename f"errors_{pid}.log"
+    filename = f"errors_{pid}.log"
 
   filepath = os.path.join(logs_dir, filename)
   if os.path.exists(filepath):
@@ -77,6 +77,8 @@ def __default_output_callback(pid, output, isStdErr, filterLines):
       regis.diagnostics.log_err(new_line)
     elif __is_in_line(new_line, warn_keywords):
       regis.diagnostics.log_warn(new_line)
+    elif not filterLines:
+      regis.diagnostics.log_no_color(new_line)
     
     f.write(f"{new_line}\n")
 
