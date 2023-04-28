@@ -50,6 +50,9 @@ import tempfile
 import threading
 import traceback
 
+import regis.util
+import regis.diagnostics
+
 try:
   import yaml
 except ImportError:
@@ -180,14 +183,19 @@ def find_binary(arg, name, build_path):
 def apply_fixes(args, clang_apply_replacements_binary, tmpdir):
   """Calls clang-apply-fixes on a given directory."""
   invocation = [clang_apply_replacements_binary]
-  invocation.append('-ignore-insert-conflict')
+  invocation.append(' -ignore-insert-conflict')
   if args.format:
-    invocation.append('-format')
+    invocation.append(' -format')
   if args.style:
-    invocation.append('-style=' + args.style)
+    invocation.append(' -style=' + args.style)
   invocation.append(tmpdir)
-  subprocess.call(invocation)
 
+  cmd = ''.join(invocation)
+  regis.diagnostics.log_info(f"Applying clang-tidy fixes")
+  regis.diagnostics.log_info(f"Using: {cmd}")
+  proc = regis.util.run_subprocess(''.join(cmd))
+  regis.util.wait_for_process(proc)
+  regis.diagnostics.log_info(f"Done applying fixes")
 
 def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
              failed_files):
@@ -388,8 +396,8 @@ def run():
       traceback.print_exc()
       return_code = 1
 
-  if tmpdir:
-    shutil.rmtree(tmpdir)
+  # if tmpdir:
+  #   shutil.rmtree(tmpdir)
     
   sys.exit(return_code)
 
