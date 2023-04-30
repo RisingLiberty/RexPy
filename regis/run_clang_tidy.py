@@ -198,12 +198,12 @@ def should_process_file(file : str, build_path : str):
 def apply_fixes(args, clang_apply_replacements_binary, tmpdir):
   """Calls clang-apply-fixes on a given directory."""
   invocation = [clang_apply_replacements_binary]
-  invocation.append('-ignore-insert-conflict')
+  invocation.append(' -ignore-insert-conflict')
   if args.format:
-    invocation.append('-format')
+    invocation.append(' -format')
   if args.style:
-    invocation.append('-style=' + args.style)
-  invocation.append(tmpdir)
+    invocation.append(' -style=' + args.style)
+  invocation.append(f' {tmpdir}')
   
   cmd = ''.join(invocation)
   proc = regis.util.run_subprocess(''.join(cmd))
