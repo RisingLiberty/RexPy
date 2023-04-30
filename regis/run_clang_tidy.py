@@ -49,15 +49,18 @@ import sys
 import tempfile
 import threading
 import traceback
+import time
 
 import regis.util
 import regis.diagnostics
+import regis.rex_json
 
 try:
   import yaml
 except ImportError:
   yaml = None
 
+processed_files : dict[str, float] = {}
 
 def strtobool(val):
   """Convert a string representation of truth to a bool following LLVM's CLI argument parsing."""
@@ -217,6 +220,9 @@ def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
         msg = "%s: terminated by signal %d\n" % (name, -proc.returncode)
         err += msg.encode('utf-8')
       failed_files.append(name)
+    else:
+      global processed_files
+      processed_files[name] = time.time()
     with lock:
       sys.stdout.write(' '.join(invocation) + '\n' + output.decode('utf-8'))
       if len(err) > 0:
@@ -224,6 +230,16 @@ def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
         sys.stderr.write(err.decode('utf-8'))
     queue.task_done()
 
+def processed_filepath(build_path : str):
+  return os.path.join(build_path, 'processed.json')
+
+def should_process_file(file : str):
+  if file in processed_files:
+    file_process_time = float(processed_files[file])
+    file_mod_time = os.path.getmtime(file)
+    return file_mod_time > file_process_time
+
+  return True
 
 def run():
   parser = argparse.ArgumentParser(description='Runs clang-tidy over all files '
@@ -294,6 +310,8 @@ def run():
   parser.add_argument('-load', dest='plugins',
                       action='append', default=[],
                       help='Load the specified plugin in clang-tidy.')
+  parser.add_argument('-incremental', action='store_true', default=True, help='run incrementally, skip files already processed run and haven\'t changed since last run')
+
   args = parser.parse_args()
 
   db_path = 'compile_commands.json'
@@ -303,6 +321,15 @@ def run():
   else:
     # Find our database
     build_path = find_compilation_database(db_path)
+
+  if args.incremental:
+    regis.diagnostics.log_info(f'Running incremental')
+    global processed_files
+    processed_path = processed_filepath(build_path)
+    if os.path.exists(processed_path):
+      processed_files = regis.rex_json.load_file(processed_path)
+    else:
+      processed_files = {}
 
   clang_tidy_binary = find_binary(args.clang_tidy_binary, "clang-tidy",
                                   build_path)
@@ -363,7 +390,10 @@ def run():
     # Fill the queue with files.
     for name in files:
       if file_name_re.search(name):
-        task_queue.put(name)
+        if not args.incremental or should_process_file(name):
+          task_queue.put(name)
+        else:
+          regis.diagnostics.log_info(f'Skipping {name} - processed last time')
 
     # Wait for all threads to be done.
     task_queue.join()
@@ -396,9 +426,11 @@ def run():
       traceback.print_exc()
       return_code = 1
 
-  # if tmpdir:
-  #   shutil.rmtree(tmpdir)
+  if tmpdir:
+    shutil.rmtree(tmpdir)
     
+  regis.rex_json.save_file(processed_filepath(build_path), processed_files)
+
   sys.exit(return_code)
 
 
