@@ -182,23 +182,35 @@ def find_binary(arg, name, build_path):
       "error: failed to find {} in $PATH or at {}"
       .format(name, built_path))
 
+def processed_filepath(build_path : str):
+  return os.path.join(build_path, 'processed.json')
 
+def should_process_file(file : str, build_path : str):
+  global processed_files
+  invocation_str = invocation_string(build_path, file)
+  if invocation_str in processed_files:
+    file_process_time = float(processed_files[invocation_str])
+    file_mod_time = os.path.getmtime(file)
+    return file_mod_time > file_process_time
+  
+  return True
+  
 def apply_fixes(args, clang_apply_replacements_binary, tmpdir):
   """Calls clang-apply-fixes on a given directory."""
   invocation = [clang_apply_replacements_binary]
-  invocation.append(' -ignore-insert-conflict')
+  invocation.append('-ignore-insert-conflict')
   if args.format:
-    invocation.append(' -format')
+    invocation.append('-format')
   if args.style:
-    invocation.append(' -style=' + args.style)
+    invocation.append('-style=' + args.style)
   invocation.append(tmpdir)
-
+  
   cmd = ''.join(invocation)
-  regis.diagnostics.log_info(f"Applying clang-tidy fixes")
-  regis.diagnostics.log_info(f"Using: {cmd}")
   proc = regis.util.run_subprocess(''.join(cmd))
   regis.util.wait_for_process(proc)
-  regis.diagnostics.log_info(f"Done applying fixes")
+  
+def invocation_string(build_path : str, file : str):
+  return build_path + ' - ' + (file)
 
 def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
              failed_files):
@@ -220,26 +232,15 @@ def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
         msg = "%s: terminated by signal %d\n" % (name, -proc.returncode)
         err += msg.encode('utf-8')
       failed_files.append(name)
-    else:
-      global processed_files
-      processed_files[name] = time.time()
     with lock:
       sys.stdout.write(' '.join(invocation) + '\n' + output.decode('utf-8'))
       if len(err) > 0:
         sys.stdout.flush()
         sys.stderr.write(err.decode('utf-8'))
+      invocation_str = invocation_string(build_path, name)
+      processed_files[invocation_str] = time.time()
     queue.task_done()
 
-def processed_filepath(build_path : str):
-  return os.path.join(build_path, 'processed.json')
-
-def should_process_file(file : str):
-  if file in processed_files:
-    file_process_time = float(processed_files[file])
-    file_mod_time = os.path.getmtime(file)
-    return file_mod_time > file_process_time
-
-  return True
 
 def run():
   parser = argparse.ArgumentParser(description='Runs clang-tidy over all files '
@@ -310,7 +311,7 @@ def run():
   parser.add_argument('-load', dest='plugins',
                       action='append', default=[],
                       help='Load the specified plugin in clang-tidy.')
-  parser.add_argument('-incremental', action='store_true', default=True, help='run incrementally, skip files already processed run and haven\'t changed since last run')
+  parser.add_argument('-incremental', action='store_true', default=False, help='run incrementally, skip files already processed run and haven\'t changed since last run')
 
   args = parser.parse_args()
 
@@ -323,7 +324,7 @@ def run():
     build_path = find_compilation_database(db_path)
 
   if args.incremental:
-    regis.diagnostics.log_info(f'Running incremental')
+    regis.diagnostics.log_info(f'Running incremental mode')
     global processed_files
     processed_path = processed_filepath(build_path)
     if os.path.exists(processed_path):
@@ -388,15 +389,19 @@ def run():
       t.start()
 
     # Fill the queue with files.
+    num_files_skipped = 0
     for name in files:
       if file_name_re.search(name):
-        if not args.incremental or should_process_file(name):
+        if not args.incremental or should_process_file(name, build_path):
           task_queue.put(name)
         else:
-          regis.diagnostics.log_info(f'Skipping {name} - processed last time')
+          num_files_skipped += 1
 
     # Wait for all threads to be done.
     task_queue.join()
+
+    regis.diagnostics.log_info(f'skipped {num_files_skipped} files')
+
     if len(failed_files):
       return_code = 1
 

@@ -200,6 +200,9 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     cmd += f" -j={threads_to_use}"
     cmd += f" {filesRegex}"
 
+    if not shouldClean:
+      cmd += f" -incremental"
+
     thread = threading.Thread(target=__run, args=(cmd,rc,))
     thread.start()
 
