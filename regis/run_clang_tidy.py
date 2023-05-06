@@ -185,13 +185,15 @@ def find_binary(arg, name, build_path):
 def processed_filepath(build_path : str):
   return os.path.join(build_path, 'processed.json')
 
-def should_process_file(file : str, build_path : str):
+def should_process_file(file : str, build_path : str, config_path : str):
   global processed_files
-  invocation_str = invocation_string(build_path, file)
+  invocation_str = invocation_string(build_path, file, config_path)
   if invocation_str in processed_files:
-    file_process_time = float(processed_files[invocation_str])
+    was_successful = processed_files[invocation_str]['successful']
+    file_process_time = float(processed_files[invocation_str]['timestamp'])
     file_mod_time = os.path.getmtime(file)
-    return file_mod_time > file_process_time
+
+    return not was_successful or file_mod_time > file_process_time
   
   return True
   
@@ -209,8 +211,8 @@ def apply_fixes(args, clang_apply_replacements_binary, tmpdir):
   proc = regis.util.run_subprocess(''.join(cmd))
   regis.util.wait_for_process(proc)
   
-def invocation_string(build_path : str, file : str):
-  return build_path + ' - ' + (file)
+def invocation_string(build_path : str, file : str, config_path : str):
+  return build_path + ' - ' + config_path + ' - -' + (file)
 
 def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
              failed_files):
@@ -225,21 +227,27 @@ def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
                                      args.line_filter, args.use_color,
                                      args.plugins)
 
-    proc = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, err = proc.communicate()
-    if proc.returncode != 0:
-      if proc.returncode < 0:
-        msg = "%s: terminated by signal %d\n" % (name, -proc.returncode)
-        err += msg.encode('utf-8')
-      failed_files.append(name)
-    with lock:
-      sys.stdout.write(' '.join(invocation) + '\n' + output.decode('utf-8'))
-      if len(err) > 0:
-        sys.stdout.flush()
-        sys.stderr.write(err.decode('utf-8'))
-      invocation_str = invocation_string(build_path, name)
-      processed_files[invocation_str] = time.time()
+    try:
+      proc = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      output, err = proc.communicate()
+      if proc.returncode != 0:
+        if proc.returncode < 0:
+          msg = "%s: terminated by signal %d\n" % (name, -proc.returncode)
+          err += msg.encode('utf-8')
+        failed_files.append(name)
+      with lock:
+        sys.stdout.write(' '.join(invocation) + '\n' + output.decode('utf-8'))
+        if len(err) > 0:
+          sys.stdout.flush()
+          sys.stderr.write(err.decode('utf-8'))
+        invocation_str = invocation_string(build_path, name, args.config_file)
+        processed_files[invocation_str] = {}
+        processed_files[invocation_str]['timestamp'] = time.time()
+        processed_files[invocation_str]['successful'] = proc.returncode == 0 # warnings are > 0, errors are < 0
+    except Exception as Ex:
+      regis.diagnostics.log_err(f'exception occurred: {Ex}')
     queue.task_done()
+
 
 
 def run():
@@ -392,7 +400,7 @@ def run():
     num_files_skipped = 0
     for name in files:
       if file_name_re.search(name):
-        if not args.incremental or should_process_file(name, build_path):
+        if not args.incremental or should_process_file(name, build_path, args.config_file):
           task_queue.put(name)
         else:
           num_files_skipped += 1
