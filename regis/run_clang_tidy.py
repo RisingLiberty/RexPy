@@ -61,6 +61,7 @@ except ImportError:
   yaml = None
 
 processed_files : dict[str, float] = {}
+active_pids = []
 
 def strtobool(val):
   """Convert a string representation of truth to a bool following LLVM's CLI argument parsing."""
@@ -229,7 +230,9 @@ def run_tidy(args, clang_tidy_binary, tmpdir, build_path, queue, lock,
 
     try:
       proc = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      active_pids.append(proc.pid)
       output, err = proc.communicate()
+      active_pids.remove(proc.pid)
       if proc.returncode != 0:
         if proc.returncode < 0:
           msg = "%s: terminated by signal %d\n" % (name, -proc.returncode)
@@ -419,7 +422,16 @@ def run():
     print('\nCtrl-C detected, goodbye.')
     if tmpdir:
       shutil.rmtree(tmpdir)
-    os.kill(0, 9)
+
+    for pid in active_pids:
+      try:
+        os.kill(pid, 9)
+      except Exception as ex:
+        # this is a hack on Windows which can sometimes fail to kill a process
+        try:
+          subprocess.check_output("Taskkill /PID %d /F" % pid)
+        except Exception as ex:
+          pass
 
   if yaml and args.export_fixes:
     print('Writing fixes to ' + args.export_fixes + ' ...')
