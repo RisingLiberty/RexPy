@@ -68,8 +68,14 @@ def run(projectName : str, compdb : str, srcRoot : str, bRunAllChecks : bool, re
       clang_config_file = os.path.join(compdb, clang_tidy_second_pass_filename)
       regis.diagnostics.log_info("Running clang-tidy - all checks")  
       cmd = f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet {regex}"
+      
+      if not bRebuild:
+        cmd += ' -incremental'
+      
       rc = __run_command(cmd) # force clang compiler, as clang-tools expect it
 
+    if rc != 0:
+      raise Exception("clang-tidy failed")
 
   else:
     regis.diagnostics.log_warn(f"No compiler db found at {compdb}")

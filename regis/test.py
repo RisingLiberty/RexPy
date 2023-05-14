@@ -89,7 +89,6 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
       os.system(f"py {iwyuPath} -v -p={compdb} > {outputPath}")
       regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
     
-
   task_print = regis.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
 
   intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"], iwyu_intermediate_dir)
@@ -97,6 +96,10 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
   if shouldClean:
     regis.diagnostics.log_info(f"cleaning {intermediate_folder}..")
     regis.util.remove_folders_recursive(intermediate_folder)
+
+  if fixIncludes and not singleThreaded:
+    regis.diagnostics.log_warn(f"Can't fix includes in a multithreaded way, this causes race conditions")
+    singleThreaded = False
 
   regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\")")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
@@ -115,6 +118,8 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
 
     if singleThreaded:
       thread.join()
+      if fixIncludes:
+        os.system(f"py {fix_includes_path} --update_comments --safe_headers < {output_path}")  
     else:
       threads.append(thread)
 
@@ -122,20 +127,6 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     thread.join()
 
   threads.clear()
-
-  for compiler_db in result:
-    if fixIncludes:
-      thread = threading.Thread(target=lambda: os.system(f"py {fix_includes_path} --update_comments --safe_headers < {output_path}"))
-      thread.start()
-
-    if singleThreaded:
-      thread.join()
-    else:
-      threads.append(thread)
-
-  for thread in threads:
-    thread.join()
-  
 
   return 0
 
@@ -588,7 +579,7 @@ def __run_auto_tests(timeoutInSeconds):
 # public API
 def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  should_fix = False
+  should_fix = True
   rc = __run_include_what_you_use(should_fix, shouldClean, singleThreaded)
 
   if rc != 0:
