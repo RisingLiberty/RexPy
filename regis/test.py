@@ -85,8 +85,15 @@ def __default_output_callback(pid, output, isStdErr, filterLines):
     regis.diagnostics.log_info(f"full output saved to {filepath}")
 
 def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
-  def __run(iwyuPath, compdb, outputPath):
-      os.system(f"py {iwyuPath} -v -p={compdb} > {outputPath}")
+  def __run(iwyuPath, compdb, outputPath, impPath):
+      cmd = ""
+      cmd += f"py {iwyuPath} -v -p={compdb}"
+      
+      if impPath != "" and os.path.exists(impPath):
+        cmd += f" -- -Xiwyu --mapping_file={impPath} -Xiwyu --no_default_mappings -Xiwyu --quoted_includes_first"
+
+      cmd += f" > {outputPath}"
+      os.system(cmd)
       regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
     
   task_print = regis.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
@@ -99,7 +106,7 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
 
   if fixIncludes and not singleThreaded:
     regis.diagnostics.log_warn(f"Can't fix includes in a multithreaded way, this causes race conditions")
-    singleThreaded = False
+    singleThreaded = True
 
   regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\")")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
@@ -111,15 +118,16 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     iwyu_tool_path = os.path.join(Path(iwyu_path).parent, "iwyu_tool.py")
     fix_includes_path = os.path.join(Path(iwyu_path).parent, "fix_includes.py")
     compiler_db_folder = Path(compiler_db).parent
+    impPath = os.path.join(compiler_db_folder, "iwyu.imp")
     output_path = os.path.join(compiler_db_folder, "iwyu_output.log")
     
-    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path))
+    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path, impPath))
     thread.start()
 
     if singleThreaded:
       thread.join()
       if fixIncludes:
-        os.system(f"py {fix_includes_path} --update_comments --safe_headers < {output_path}")  
+        os.system(f"py {fix_includes_path}  --update_comments --nosafe_headers < {output_path}")  
     else:
       threads.append(thread)
 
