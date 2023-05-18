@@ -90,7 +90,7 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
       cmd += f"py {iwyuPath} -v -p={compdb}"
       
       if impPath != "" and os.path.exists(impPath):
-        cmd += f" -- -Xiwyu --mapping_file={impPath} -Xiwyu --no_default_mappings -Xiwyu --quoted_includes_first"
+        cmd += f" -- -Xiwyu --mapping_file={impPath} -Xiwyu --quoted_includes_first"
 
       cmd += f" > {outputPath}"
       os.system(cmd)
@@ -104,14 +104,11 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     regis.diagnostics.log_info(f"cleaning {intermediate_folder}..")
     regis.util.remove_folders_recursive(intermediate_folder)
 
-  if fixIncludes and not singleThreaded:
-    regis.diagnostics.log_warn(f"Can't fix includes in a multithreaded way, this causes race conditions")
-    singleThreaded = True
-
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\")")
+  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\") /disableClangTidyForThirdParty")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
     
   threads : list[threading.Thread] = []
+  output_files_per_project = {}
 
   for compiler_db in result:
     iwyu_path = tool_paths_dict["include_what_you_use_path"]
@@ -120,14 +117,18 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     compiler_db_folder = Path(compiler_db).parent
     impPath = os.path.join(compiler_db_folder, "iwyu.imp")
     output_path = os.path.join(compiler_db_folder, "iwyu_output.log")
-    
+    project_name = __get_project_name(compiler_db_folder)
+
+    if project_name not in output_files_per_project:
+      output_files_per_project[project_name] = []
+
+    output_files_per_project[project_name].append(output_path)
+
     thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path, impPath))
     thread.start()
 
     if singleThreaded:
-      thread.join()
-      if fixIncludes:
-        os.system(f"py {fix_includes_path}  --update_comments --nosafe_headers < {output_path}")  
+      thread.join() 
     else:
       threads.append(thread)
 
@@ -135,6 +136,32 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     thread.join()
 
   threads.clear()
+
+  # because different configs could require different symbols or includes
+  # we need to process all configs first, then process each output file for each config
+  # for a given project and only if an include is not needed in all configs
+  # take action and remove it or replace it with a forward declare
+  # the worst case scenario this will result 
+  # this can't be multithreaded
+
+  for key in output_files_per_project.keys():
+    output_files = output_files_per_project[key]
+    lines = []
+    regis.diagnostics.log_info(f'processing: {key}')
+    for file in output_files:
+      regis.diagnostics.log_info(f'merging file: {file}')
+
+      f = open(file, "r")
+      lines.extend(f.readlines())
+
+    filename = f'{key}_tmp.iwyu'
+    filepath = os.path.join(intermediate_folder, filename)
+    f = open(filepath, "w")
+    f.writelines(lines)
+    f.close()
+    cmd = f"py {fix_includes_path} --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
+
+    os.system(f"{cmd} < {output_path}")  
 
   return 0
 
@@ -171,7 +198,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\")")
+  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\") /disableClangTidyForThirdParty")
 
   # get the compiler dbs that are just generated
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
