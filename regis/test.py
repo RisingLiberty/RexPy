@@ -143,25 +143,24 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
   # take action and remove it or replace it with a forward declare
   # the worst case scenario this will result 
   # this can't be multithreaded
+  if fixIncludes:
+    regis.diagnostics.log_info(f'Applying fixes..')
+    for key in output_files_per_project.keys():
+      output_files = output_files_per_project[key]
+      lines = []
+      regis.diagnostics.log_info(f'processing: {key}')
+      for file in output_files:
+        f = open(file, "r")
+        lines.extend(f.readlines())
 
-  for key in output_files_per_project.keys():
-    output_files = output_files_per_project[key]
-    lines = []
-    regis.diagnostics.log_info(f'processing: {key}')
-    for file in output_files:
-      regis.diagnostics.log_info(f'merging file: {file}')
+      filename = f'{key}_tmp.iwyu'
+      filepath = os.path.join(intermediate_folder, filename)
+      f = open(filepath, "w")
+      f.writelines(lines)
+      f.close()
+      cmd = f"py {fix_includes_path} --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
 
-      f = open(file, "r")
-      lines.extend(f.readlines())
-
-    filename = f'{key}_tmp.iwyu'
-    filepath = os.path.join(intermediate_folder, filename)
-    f = open(filepath, "w")
-    f.writelines(lines)
-    f.close()
-    cmd = f"py {fix_includes_path} --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
-
-    os.system(f"{cmd} < {output_path}")  
+      os.system(f"{cmd} < {output_path}")  
 
   return 0
 
@@ -177,7 +176,7 @@ def __get_project_name(compdbPath):
   
   return ""
 
-def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False):
+def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, shouldFix : bool = False):
 
   rc = [0]
   def __run(cmd : str, rc : int):
@@ -224,6 +223,10 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
     cmd += f" -quiet"
     cmd += f" -j={threads_to_use}"
+
+    if shouldFix:
+      cmd += f" -fix"
+
     cmd += f" {filesRegex}"
 
     if not shouldClean:
@@ -612,10 +615,9 @@ def __run_auto_tests(timeoutInSeconds):
   return rc
 
 # public API
-def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False):
+def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False, shouldFix : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  should_fix = True
-  rc = __run_include_what_you_use(should_fix, shouldClean, singleThreaded)
+  rc = __run_include_what_you_use(shouldFix, shouldClean, singleThreaded)
 
   if rc != 0:
     regis.diagnostics.log_err(f"include-what-you-use pass failed")
