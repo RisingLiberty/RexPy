@@ -51,6 +51,17 @@ def __is_in_line(line : str, keywords : list[str]):
 
   return False
 
+def __symbolic_print(line, filterLines : bool = False):
+  error_keywords = ["failed", "error"]
+  warn_keywords = ["warning"]
+
+  if __is_in_line(line, error_keywords):
+    regis.diagnostics.log_err(line)
+  elif __is_in_line(line, warn_keywords):
+    regis.diagnostics.log_warn(line)
+  elif not filterLines:
+    regis.diagnostics.log_no_color(line)
+
 def __default_output_callback(pid, output, isStdErr, filterLines):
   error_keywords = ["failed", "error"]
   warn_keywords = ["warning"]
@@ -73,28 +84,30 @@ def __default_output_callback(pid, output, isStdErr, filterLines):
       if new_line.endswith('\n'):
         new_line = new_line.removesuffix('\n')
 
-      if __is_in_line(new_line, error_keywords):
-        regis.diagnostics.log_err(new_line)
-      elif __is_in_line(new_line, warn_keywords):
-        regis.diagnostics.log_warn(new_line)
-      elif not filterLines:
-        regis.diagnostics.log_no_color(new_line)
-      
+      __symbolic_print(new_line, filterLines)      
       f.write(f"{new_line}\n")
 
     regis.diagnostics.log_info(f"full output saved to {filepath}")
 
 def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
-  def __run(iwyuPath, compdb, outputPath, impPath):
+  def __run(iwyuPath, compdb, outputPath, impPath, lock):
       cmd = ""
       cmd += f"py {iwyuPath} -v -p={compdb}"
+      cmd += f" -- -Xiwyu --quoted_includes_first"
       
       if impPath != "" and os.path.exists(impPath):
-        cmd += f" -- -Xiwyu --mapping_file={impPath} -Xiwyu --quoted_includes_first"
+        cmd += f" -Xiwyu --mapping_file={impPath}"
 
-      cmd += f" > {outputPath}"
-      os.system(cmd)
-      regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
+      output, errc = regis.util.run_and_get_output(cmd)
+      with open(outputPath, "w") as f:
+        f.write(output)
+      output_lines = output.split('\n')
+
+      with lock:
+        for line in output_lines:
+          __symbolic_print(line)
+
+        regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
     
   task_print = regis.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
 
@@ -109,6 +122,7 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     
   threads : list[threading.Thread] = []
   output_files_per_project = {}
+  lock = threading.Lock()
 
   for compiler_db in result:
     iwyu_path = tool_paths_dict["include_what_you_use_path"]
@@ -124,7 +138,7 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
 
     output_files_per_project[project_name].append(output_path)
 
-    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path, impPath))
+    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path, impPath, lock))
     thread.start()
 
     if singleThreaded:
@@ -145,24 +159,29 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
   # this can't be multithreaded
   if fixIncludes:
     regis.diagnostics.log_info(f'Applying fixes..')
-    for key in output_files_per_project.keys():
-      output_files = output_files_per_project[key]
-      lines = []
-      regis.diagnostics.log_info(f'processing: {key}')
-      for file in output_files:
-        f = open(file, "r")
-        lines.extend(f.readlines())
 
-      filename = f'{key}_tmp.iwyu'
-      filepath = os.path.join(intermediate_folder, filename)
-      f = open(filepath, "w")
-      f.writelines(lines)
-      f.close()
-      cmd = f"py {fix_includes_path} --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
+  rc = 0
+  for key in output_files_per_project.keys():
+    output_files = output_files_per_project[key]
+    lines = []
+    regis.diagnostics.log_info(f'processing: {key}')
+    for file in output_files:
+      f = open(file, "r")
+      lines.extend(f.readlines())
 
-      os.system(f"{cmd} < {output_path}")  
+    filename = f'{key}_tmp.iwyu'
+    filepath = os.path.join(intermediate_folder, filename)
+    f = open(filepath, "w")
+    f.writelines(lines)
+    f.close()
+    cmd = f"py {fix_includes_path} --noreorder --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
 
-  return 0
+    if fixIncludes == False:
+      cmd += f" --dry_run"
+
+    rc |= os.system(f"{cmd} < {output_path}")  
+
+  return rc
 
 # the compdbPath directory contains all the files needed to configure clang tools
 # this includes the compiler database, clang tidy config files, clang format config files
@@ -624,9 +643,9 @@ def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool =
 
   __pass_results["include-what-you-use"] = rc
 
-def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False):
+def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, autoFix : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __run_clang_tidy(filesRegex, shouldClean, singleThreaded, filterLines)
+  rc = __run_clang_tidy(filesRegex, shouldClean, singleThreaded, filterLines, autoFix)
   if rc != 0:
     regis.diagnostics.log_err(f"clang-tidy pass failed")
 

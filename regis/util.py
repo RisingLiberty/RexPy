@@ -146,7 +146,7 @@ def run_and_get_output(command):
   proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   output, errc = proc.communicate()
 
-  return output.decode('utf-8'), errc
+  return output.decode('utf-8'), proc.returncode
 
 def run_subprocess_with_working_dir(command, workingDir):
   proc = subprocess.Popen(command, cwd=workingDir)
