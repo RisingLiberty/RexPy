@@ -53,7 +53,7 @@ def __build_host_path(baseUrl, name, tag):
 def __load_externals_required():
     root = regis.util.find_root()
 
-    json_blob = regis.rex_json.load_file(os.path.join(root, "build", "config", "required_externals.json"))
+    json_blob = regis.rex_json.load_file(os.path.join(root, "_build", "config", "required_externals.json"))
     if json_blob == None:
         regis.diagnostics.log_err("Loaded json blob is None, stopping json parse")
         return []

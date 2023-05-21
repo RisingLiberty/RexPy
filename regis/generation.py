@@ -9,7 +9,7 @@ import regis.diagnostics
 from pathlib import Path
 
 root = regis.util.find_root()
-settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+settings = regis.rex_json.load_file(os.path.join(root, regis.util.settingsPathFromRoot))
 temp_dir = os.path.join(root, settings["intermediate_folder"])
 tools_install_dir = os.path.join(temp_dir, settings["tools_folder"])
 tool_paths_filepath = os.path.join(tools_install_dir, "tool_paths.json")
@@ -46,7 +46,7 @@ def __scan_for_sharpmake_files(settingsPath : str):
   all searches are done recursively.
   """
   settings = regis.rex_json.load_file(settingsPath)
-  sharpmake_root = os.path.join(root, settings["build_folder"], "sharpmake")
+  sharpmake_root = os.path.join(root, "_build", "sharpmake")
   source_root = os.path.join(root, settings["source_folder"])
   tests_root = os.path.join(root, settings["tests_folder"])
   

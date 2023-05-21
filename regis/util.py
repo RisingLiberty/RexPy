@@ -5,6 +5,8 @@ from pathlib import Path
 import regis.diagnostics
 import regis.rex_json
 
+settingsPathFromRoot = os.path.join("_build", "config", "settings.json")
+
 def create_version_file(directory : str, tag : str):
     version = {
         "tag": tag
@@ -175,7 +177,7 @@ def find_all_files_in_folder(dir, toFindRegex):
 def find_ninja_project(project : str, intermediateDir : str = ""):
   root = find_root()
   project_file_name = f"{project}.nproj"
-  settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+  settings = regis.rex_json.load_file(os.path.join(root, settingsPathFromRoot))
   intermediate_folder = settings["intermediate_folder"]
   build_folder = settings["build_folder"]
 
