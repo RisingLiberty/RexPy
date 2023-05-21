@@ -27,7 +27,7 @@ from datetime import datetime
 
 root_path = regis.util.find_root()
 tool_paths_dict = regis.required_tools.tool_paths_dict
-settings = regis.rex_json.load_file(os.path.join(root_path, regis.util.settingsPathFromRoot))
+settings = regis.rex_json.load_file(os.path.join(root_path, "build", "config", "settings.json"))
 __pass_results = {}
 
 iwyu_intermediate_dir = "iwyu"
@@ -51,6 +51,17 @@ def __is_in_line(line : str, keywords : list[str]):
 
   return False
 
+def __symbolic_print(line, filterLines : bool = False):
+  error_keywords = ["failed", "error"]
+  warn_keywords = ["warning"]
+
+  if __is_in_line(line, error_keywords):
+    regis.diagnostics.log_err(line)
+  elif __is_in_line(line, warn_keywords):
+    regis.diagnostics.log_warn(line)
+  elif not filterLines:
+    regis.diagnostics.log_no_color(line)
+
 def __default_output_callback(pid, output, isStdErr, filterLines):
   error_keywords = ["failed", "error"]
   warn_keywords = ["warning"]
@@ -73,23 +84,31 @@ def __default_output_callback(pid, output, isStdErr, filterLines):
       if new_line.endswith('\n'):
         new_line = new_line.removesuffix('\n')
 
-      if __is_in_line(new_line, error_keywords):
-        regis.diagnostics.log_err(new_line)
-      elif __is_in_line(new_line, warn_keywords):
-        regis.diagnostics.log_warn(new_line)
-      elif not filterLines:
-        regis.diagnostics.log_no_color(new_line)
-      
+      __symbolic_print(new_line, filterLines)      
       f.write(f"{new_line}\n")
 
     regis.diagnostics.log_info(f"full output saved to {filepath}")
 
 def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
-  def __run(iwyuPath, compdb, outputPath):
-      os.system(f"py {iwyuPath} -v -p={compdb} > {outputPath}")
-      regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
-    
+  def __run(iwyuPath, compdb, outputPath, impPath, lock):
+      cmd = ""
+      cmd += f"py {iwyuPath} -v -p={compdb}"
+      cmd += f" -- -Xiwyu --quoted_includes_first"
+      
+      if impPath != "" and os.path.exists(impPath):
+        cmd += f" -Xiwyu --mapping_file={impPath}"
 
+      output, errc = regis.util.run_and_get_output(cmd)
+      with open(outputPath, "w") as f:
+        f.write(output)
+      output_lines = output.split('\n')
+
+      with lock:
+        for line in output_lines:
+          __symbolic_print(line)
+
+        regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
+    
   task_print = regis.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
 
   intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"], iwyu_intermediate_dir)
@@ -98,23 +117,32 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     regis.diagnostics.log_info(f"cleaning {intermediate_folder}..")
     regis.util.remove_folders_recursive(intermediate_folder)
 
-  regis.generation.new_generation(os.path.join(root_path, regis.util.settingsPathFromRoot), f"/intermediateDir(\"{iwyu_intermediate_dir}\")")
+  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\") /disableClangTidyForThirdParty")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
     
   threads : list[threading.Thread] = []
+  output_files_per_project = {}
+  lock = threading.Lock()
 
   for compiler_db in result:
     iwyu_path = tool_paths_dict["include_what_you_use_path"]
     iwyu_tool_path = os.path.join(Path(iwyu_path).parent, "iwyu_tool.py")
     fix_includes_path = os.path.join(Path(iwyu_path).parent, "fix_includes.py")
     compiler_db_folder = Path(compiler_db).parent
+    impPath = os.path.join(compiler_db_folder, "iwyu.imp")
     output_path = os.path.join(compiler_db_folder, "iwyu_output.log")
-    
-    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path))
+    project_name = __get_project_name(compiler_db_folder)
+
+    if project_name not in output_files_per_project:
+      output_files_per_project[project_name] = []
+
+    output_files_per_project[project_name].append(output_path)
+
+    thread = threading.Thread(target=__run, args=(iwyu_tool_path, compiler_db, output_path, impPath, lock))
     thread.start()
 
     if singleThreaded:
-      thread.join()
+      thread.join() 
     else:
       threads.append(thread)
 
@@ -123,21 +151,37 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
 
   threads.clear()
 
-  for compiler_db in result:
-    if fixIncludes:
-      thread = threading.Thread(target=lambda: os.system(f"py {fix_includes_path} --update_comments --safe_headers < {output_path}"))
-      thread.start()
+  # because different configs could require different symbols or includes
+  # we need to process all configs first, then process each output file for each config
+  # for a given project and only if an include is not needed in all configs
+  # take action and remove it or replace it with a forward declare
+  # the worst case scenario this will result 
+  # this can't be multithreaded
+  if fixIncludes:
+    regis.diagnostics.log_info(f'Applying fixes..')
 
-    if singleThreaded:
-      thread.join()
-    else:
-      threads.append(thread)
+  rc = 0
+  for key in output_files_per_project.keys():
+    output_files = output_files_per_project[key]
+    lines = []
+    regis.diagnostics.log_info(f'processing: {key}')
+    for file in output_files:
+      f = open(file, "r")
+      lines.extend(f.readlines())
 
-  for thread in threads:
-    thread.join()
-  
+    filename = f'{key}_tmp.iwyu'
+    filepath = os.path.join(intermediate_folder, filename)
+    f = open(filepath, "w")
+    f.writelines(lines)
+    f.close()
+    cmd = f"py {fix_includes_path} --noreorder --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
 
-  return 0
+    if fixIncludes == False:
+      cmd += f" --dry_run"
+
+    rc |= os.system(f"{cmd} < {output_path}")  
+
+  return rc
 
 # the compdbPath directory contains all the files needed to configure clang tools
 # this includes the compiler database, clang tidy config files, clang format config files
@@ -151,7 +195,7 @@ def __get_project_name(compdbPath):
   
   return ""
 
-def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False):
+def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, shouldFix : bool = False):
 
   rc = [0]
   def __run(cmd : str, rc : int):
@@ -172,7 +216,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  regis.generation.new_generation(os.path.join(root_path, regis.util.settingsPathFromRoot), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\")")
+  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\") /disableClangTidyForThirdParty")
 
   # get the compiler dbs that are just generated
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
@@ -198,6 +242,10 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
     cmd += f" -quiet"
     cmd += f" -j={threads_to_use}"
+
+    if shouldFix:
+      cmd += f" -fix"
+
     cmd += f" {filesRegex}"
 
     if not shouldClean:
@@ -218,7 +266,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
 
 def __generate_test_files(sharpmakeArgs):
   root = regis.util.find_root()
-  settings_path = os.path.join(root, regis.util.settingsPathFromRoot)
+  settings_path = os.path.join(root, "build", "config", "settings.json")
   proc = regis.generation.new_generation(settings_path, sharpmakeArgs)
   proc.wait()
   return proc.returncode
@@ -586,19 +634,18 @@ def __run_auto_tests(timeoutInSeconds):
   return rc
 
 # public API
-def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False):
+def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False, shouldFix : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  should_fix = False
-  rc = __run_include_what_you_use(should_fix, shouldClean, singleThreaded)
+  rc = __run_include_what_you_use(shouldFix, shouldClean, singleThreaded)
 
   if rc != 0:
     regis.diagnostics.log_err(f"include-what-you-use pass failed")
 
   __pass_results["include-what-you-use"] = rc
 
-def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False):
+def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, autoFix : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __run_clang_tidy(filesRegex, shouldClean, singleThreaded, filterLines)
+  rc = __run_clang_tidy(filesRegex, shouldClean, singleThreaded, filterLines, autoFix)
   if rc != 0:
     regis.diagnostics.log_err(f"clang-tidy pass failed")
 
