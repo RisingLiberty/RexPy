@@ -314,18 +314,20 @@ def __build_files(configs : list[str], compilers : list[str], intermediateDir : 
 
   return result[0]
 
-def __find_programs(folder):
-  intermediate_folder = os.path.join(folder)
-  regis.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, intermediate_folder)}")
-  programs : list[str] = []
+def __find_files(folder, predicate):
+  found_files : list[str] = []
 
   for root, dirs, files in os.walk(folder):
     for file in files:
-      if regis.util.is_executable(file):
+      if predicate(file):
         path = os.path.join(root, file)
-        programs.append(path)      
+        found_files.append(path)      
   
-  return programs
+  return found_files
+
+def __find_programs(folder):
+  regis.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, folder)}")
+  return __find_files(folder, lambda file: regis.util.is_executable(file))
 
 def __create_full_intermediate_dir(dir):
   return os.path.join(settings["intermediate_folder"], settings["build_folder"], dir)
@@ -592,46 +594,70 @@ def __build_auto_tests(configs, compilers, projects, singleThreaded : bool = Fal
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
   return __build_files(configs, compilers, auto_test_intermediate_dir, projects, singleThreaded)
 
+def __process_tests_file(file, programs, timeoutInSeconds):
+  json_blob = regis.rex_json.load_file(file)
+    
+  results = {}
+
+  for test in json_blob:
+    command_line = json_blob[test]["command_line"]
+
+    rc = 0
+    for program in programs:
+      regis.diagnostics.log_info(f"running: {Path(program).name}")
+      regis.diagnostics.log_info(f"with command line: {command_line}")
+      proc = regis.util.run_subprocess(f"{program} {command_line}")
+
+      # wait for program to finish on a different thread so we can terminate it on timeout
+      thread = threading.Thread(target=lambda: proc.wait())
+      thread.start()
+
+      # wait for timeout to trigger or until the program exits
+      now = time.time()
+      duration = 0
+      killed_process = False
+      max_seconds = timeoutInSeconds
+      while True:
+        duration = time.time() - now
+        if not thread.is_alive():
+          break
+        
+        if duration > max_seconds:
+          proc.terminate() 
+          killed_process = True
+          break
+
+      # makes sure that we get an error code even if the program crashed
+      proc.communicate()
+      new_rc = proc.returncode
+      
+      if new_rc != 0:
+        if killed_process:
+          regis.diagnostics.log_err(f"auto test timeout triggered for {program} after {max_seconds} seconds") # use full path to avoid ambiguity
+        else:
+          rc |= new_rc
+          regis.diagnostics.log_err(f"auto test failed for {program} with returncode {new_rc}") # use full path to avoid ambiguity
+
+      results[program] = rc
+
+  return results
+
+  
+
 def __run_auto_tests(timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
   programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], auto_test_intermediate_dir, "ninja"))
   
-  rc = 0
-  for program in programs:
-    regis.diagnostics.log_info(f"running: {Path(program).name}")
-    proc = regis.util.run_subprocess(program)
+  test_dir = os.path.join(root_path, settings["tests_folder"])
 
-    # wait for program to finish on a different thread so we can terminate it on timeout
-    thread = threading.Thread(target=lambda: proc.wait())
-    thread.start()
+  files = __find_files(test_dir, lambda file: Path(file).name == "tests.json")
 
-    # wait for timeout to trigger or until the program exits
-    now = time.time()
-    duration = 0
-    killed_process = False
-    max_seconds = timeoutInSeconds
-    while True:
-      duration = time.time() - now
-      if not thread.is_alive():
-        break
-      
-      if duration > max_seconds:
-        proc.terminate() 
-        killed_process = True
-        break
+  results : list[dict] = []
 
-    # makes sure that we get an error code even if the program crashed
-    proc.communicate()
-    new_rc = proc.returncode
-    
-    if new_rc != 0:
-      if killed_process:
-        regis.diagnostics.log_warn(f"auto test timeout triggered for {program} after {max_seconds} seconds") # use full path to avoid ambiguity
-      else:
-        rc |= new_rc
-        regis.diagnostics.log_err(f"auto test failed for {program} with returncode {new_rc}") # use full path to avoid ambiguity
+  for file in files:
+    results.append(__process_tests_file(file, programs, timeoutInSeconds))
 
-  return rc
+  return 0
 
 # public API
 def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False, shouldFix : bool = False):
