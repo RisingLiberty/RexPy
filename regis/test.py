@@ -27,7 +27,7 @@ from datetime import datetime
 
 root_path = regis.util.find_root()
 tool_paths_dict = regis.required_tools.tool_paths_dict
-settings = regis.rex_json.load_file(os.path.join(root_path, "build", "config", "settings.json"))
+settings = regis.rex_json.load_file(os.path.join(root_path, regis.util.settingsPathFromRoot))
 __pass_results = {}
 
 iwyu_intermediate_dir = "iwyu"
@@ -117,7 +117,7 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     regis.diagnostics.log_info(f"cleaning {intermediate_folder}..")
     regis.util.remove_folders_recursive(intermediate_folder)
 
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\") /disableClangTidyForThirdParty")
+  regis.generation.new_generation(os.path.join(root_path, "_build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\") /disableClangTidyForThirdParty")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
     
   threads : list[threading.Thread] = []
@@ -216,7 +216,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\") /disableClangTidyForThirdParty")
+  regis.generation.new_generation(os.path.join(root_path, regis.util.settingsPathFromRoot), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\") /disableClangTidyForThirdParty")
 
   # get the compiler dbs that are just generated
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
@@ -266,7 +266,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
 
 def __generate_test_files(sharpmakeArgs):
   root = regis.util.find_root()
-  settings_path = os.path.join(root, "build", "config", "settings.json")
+  settings_path = os.path.join(root, regis.util.settingsPathFromRoot)
   proc = regis.generation.new_generation(settings_path, sharpmakeArgs)
   proc.wait()
   return proc.returncode
