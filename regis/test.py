@@ -588,7 +588,7 @@ def __generate_auto_tests(shouldClean):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  return __generate_test_files(f"/noClangTools /intermediateDir(\"{auto_test_intermediate_dir}\")")
+  return __generate_test_files(f"/noClangTools /enableAutoTests /intermediateDir(\"{auto_test_intermediate_dir}\")")
 
 def __build_auto_tests(configs, compilers, projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
@@ -641,8 +641,6 @@ def __process_tests_file(file, programs, timeoutInSeconds):
       results[program] = rc
 
   return results
-
-  
 
 def __run_auto_tests(timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
