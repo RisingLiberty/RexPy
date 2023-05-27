@@ -6,17 +6,18 @@ import regis.util
 import regis.diagnostics
 import regis.subproc
 
-from pathlib import Path
+from requests.structures import CaseInsensitiveDict
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
 
-def __launch_new_build(project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = ""):
-  project_file_path = regis.util.find_ninja_project(project, intermediateDir)
-
-  if project_file_path == "":
-    regis.diagnostics.log_err(f"project '{project}' was not found, have you generated it?")
+def __launch_new_build(sln_file : str, project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = ""):
+  sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(sln_file))
+  
+  if project not in sln_jsob_blob:
+    regis.diagnostics.log_err(f"project '{project}' was not found in solution, have you generated it?")
     return 1, alreadyBuild
-    
+  
+  project_file_path = sln_jsob_blob[project]    
   json_blob = regis.rex_json.load_file(project_file_path)
 
   project_lower = project.lower()
@@ -46,8 +47,12 @@ def __launch_new_build(project : str, config : str, compiler : str, shouldClean 
   proc.wait()
   return proc.returncode, alreadyBuild
 
-def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False):
+def new_build(sln_file : str, project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False):
+  if not os.path.exists(sln_file):
+    regis.diagnostics.log_err(f'solution path {sln_file} does not exist')
+    return 1
+  
   already_build = []
-  res, build_projects = __launch_new_build(project, config, compiler, shouldClean, already_build, intermediateDir)
+  res, build_projects = __launch_new_build(sln_file, project, config, compiler, shouldClean, already_build, intermediateDir)
   return res
   
