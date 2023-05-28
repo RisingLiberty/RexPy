@@ -1,14 +1,23 @@
 import os
-import subprocess
 import regis.required_tools
 import regis.rex_json
 import regis.util
 import regis.diagnostics
 import regis.subproc
 
+from pathlib import Path
+
 from requests.structures import CaseInsensitiveDict
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
+
+def find_sln_in_cwd():
+  dirs = os.listdir()
+  for dir in dirs:
+    if os.path.isfile(dir) and Path(dir).suffix == ".nsln":
+      return dir
+    
+  return ""
 
 def __launch_new_build(sln_file : str, project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = ""):
   sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(sln_file))
@@ -47,12 +56,15 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
   proc.wait()
   return proc.returncode, alreadyBuild
 
-def new_build(sln_file : str, project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False):
-  if not os.path.exists(sln_file):
-    regis.diagnostics.log_err(f'solution path {sln_file} does not exist')
+def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False, slnFile : str = ""):
+  if slnFile == "":
+    slnFile = find_sln_in_cwd()
+
+  if not os.path.exists(slnFile):
+    regis.diagnostics.log_err(f'solution path {slnFile} does not exist')
     return 1
   
   already_build = []
-  res, build_projects = __launch_new_build(sln_file, project, config, compiler, shouldClean, already_build, intermediateDir)
+  res, build_projects = __launch_new_build(slnFile, project, config, compiler, shouldClean, already_build, intermediateDir)
   return res
   
