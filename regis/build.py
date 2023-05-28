@@ -13,11 +13,14 @@ tool_paths_dict = regis.required_tools.tool_paths_dict
 
 def find_sln_in_cwd():
   dirs = os.listdir()
+
+  res = []
+
   for dir in dirs:
     if os.path.isfile(dir) and Path(dir).suffix == ".nsln":
-      return dir
+      res.append(dir)
     
-  return ""
+  return res
 
 def __launch_new_build(sln_file : str, project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = ""):
   sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(sln_file))
@@ -56,12 +59,34 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
   proc.wait()
   return proc.returncode, alreadyBuild
 
-def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False, slnFile : str = ""):
+def __look_for_sln_file_to_use(slnFile : str):
   if slnFile == "":
-    slnFile = find_sln_in_cwd()
+    sln_files = find_sln_in_cwd()
 
-  if not os.path.exists(slnFile):
+    if len(sln_files) > 1:
+      regis.diagnostics.log_err(f'more than 1 nsln file was found in the cwd, please specify which one you want to use')
+    
+      for file in sln_files:
+        regis.diagnostics.log_err(f'-{file}')
+    
+      return ""
+    
+    if len(sln_files) == 0:
+      regis.diagnostics.log_err(f'no nlsn found in {os.getcwd()}')
+      return ""
+
+    slnFile = sln_files[0]
+  elif not os.path.exists(slnFile):
     regis.diagnostics.log_err(f'solution path {slnFile} does not exist')
+    return ""
+  
+  return slnFile
+
+def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False, slnFile : str = ""):
+  slnFile = __look_for_sln_file_to_use(slnFile)
+
+  if slnFile == "":
+    regis.diagnostics.log_err("aborting..")
     return 1
   
   already_build = []
