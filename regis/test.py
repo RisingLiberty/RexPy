@@ -655,6 +655,11 @@ def __run_auto_tests(timeoutInSeconds):
   for file in files:
     results.append(__process_tests_file(file, programs, timeoutInSeconds))
 
+  for res in results:
+    values = list(res.values())
+    if (len(values) != values.count(0)):
+      return 1
+
   return 0
 
 # public API
