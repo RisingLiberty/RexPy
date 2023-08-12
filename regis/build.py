@@ -52,6 +52,7 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
 
   ninja_path = tool_paths_dict["ninja_path"]
   if shouldClean:
+    regis.diagnostics.log_info(f'Cleaning intermediates')
     proc = regis.subproc.run(f"{ninja_path} -f {ninja_file} -t clean")
     proc.wait()
 
