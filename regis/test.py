@@ -284,10 +284,10 @@ def __find_projects_with_suffix(directory):
 def __build_files(configs : list[str], compilers : list[str], intermediateDir : str, projectsToBuild : list[str] = "", singleThreaded : bool = False):
   should_clean = False
 
-  result = [0]
+  result_arr = []
 
   def __run(prj, cfg, comp, intermediateDir, shouldClean, result):
-    result[0] |= regis.build.new_build(prj, cfg, comp, intermediateDir, shouldClean)
+    result.append(regis.build.new_build(prj, cfg, comp, intermediateDir, shouldClean))
 
   intermediate_folder = settings["intermediate_folder"]
   build_folder = settings["build_folder"]
@@ -301,7 +301,7 @@ def __build_files(configs : list[str], compilers : list[str], intermediateDir : 
     if len(projectsToBuild) == 0 or project.lower() in (project_to_build.lower() for project_to_build in projectsToBuild):
       for config in configs:
         for compiler in compilers:
-          thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result))
+          thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result_arr))
           thread.start()
 
           if singleThreaded:
@@ -312,7 +312,9 @@ def __build_files(configs : list[str], compilers : list[str], intermediateDir : 
   for thread in threads:
     thread.join()
 
-  return result[0]
+  # if any result return code is different than 0
+  # a build has failed somewhere
+  return result_arr.count(0) != len(result_arr)
 
 def __find_files(folder, predicate):
   found_files : list[str] = []
