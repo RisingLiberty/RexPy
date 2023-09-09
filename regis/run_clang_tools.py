@@ -59,7 +59,8 @@ def run(projectName : str, compdb : str, srcRoot : str, bRunAllChecks : bool, re
     if not bRebuild:
       cmd += ' -incremental'
     
-    rc = __run_command(cmd) # force clang compiler, as clang-tools expect it
+    proc = regis.util.run_subprocess(cmd)
+    rc = regis.util.wait_for_process(proc)
 
     if rc != 0:
       raise Exception("clang-tidy auto fixes failed")
