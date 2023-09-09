@@ -21,13 +21,14 @@ import regis.code_coverage
 import regis.diagnostics
 import regis.generation
 import regis.build
+import regis.dir_watcher
 
 from pathlib import Path
 from datetime import datetime
 
 root_path = regis.util.find_root()
 tool_paths_dict = regis.required_tools.tool_paths_dict
-settings = regis.rex_json.load_file(os.path.join(root_path, "build", "config", "settings.json"))
+settings = regis.rex_json.load_file(os.path.join(root_path, regis.util.settingsPathFromRoot))
 __pass_results = {}
 
 iwyu_intermediate_dir = "iwyu"
@@ -117,7 +118,7 @@ def __run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, s
     regis.diagnostics.log_info(f"cleaning {intermediate_folder}..")
     regis.util.remove_folders_recursive(intermediate_folder)
 
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\") /disableClangTidyForThirdParty")
+  regis.generation.new_generation(os.path.join(root_path, "_build", "config", "settings.json"), f"/intermediateDir(\"{iwyu_intermediate_dir}\") /disableClangTidyForThirdParty")
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
     
   threads : list[threading.Thread] = []
@@ -216,7 +217,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  regis.generation.new_generation(os.path.join(root_path, "build", "config", "settings.json"), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\") /disableClangTidyForThirdParty")
+  regis.generation.new_generation(os.path.join(root_path, regis.util.settingsPathFromRoot), f"/intermediateDir(\"{clang_tidy_intermediate_dir}\") /disableClangTidyForThirdParty")
 
   # get the compiler dbs that are just generated
   result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
@@ -266,7 +267,7 @@ def __run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : boo
 
 def __generate_test_files(sharpmakeArgs):
   root = regis.util.find_root()
-  settings_path = os.path.join(root, "build", "config", "settings.json")
+  settings_path = os.path.join(root, regis.util.settingsPathFromRoot)
   proc = regis.generation.new_generation(settings_path, sharpmakeArgs)
   proc.wait()
   return proc.returncode
@@ -314,18 +315,20 @@ def __build_files(configs : list[str], compilers : list[str], intermediateDir : 
 
   return result[0]
 
-def __find_programs(folder):
-  intermediate_folder = os.path.join(folder)
-  regis.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, intermediate_folder)}")
-  programs : list[str] = []
+def __find_files(folder, predicate):
+  found_files : list[str] = []
 
   for root, dirs, files in os.walk(folder):
     for file in files:
-      if regis.util.is_executable(file):
+      if predicate(file):
         path = os.path.join(root, file)
-        programs.append(path)      
+        found_files.append(path)      
   
-  return programs
+  return found_files
+
+def __find_programs(folder):
+  regis.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, folder)}")
+  return __find_files(folder, lambda file: regis.util.is_executable(file))
 
 def __create_full_intermediate_dir(dir):
   return os.path.join(settings["intermediate_folder"], settings["build_folder"], dir)
@@ -345,12 +348,11 @@ def __build_tests(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building tests")
   return __build_files(["debug", "debug_opt", "release"], ["msvc", "clang"], unit_tests_intermediate_dir, projects, singleThreaded)
 
-def __run_unit_tests():
+def __run_unit_tests(unitTestPrograms):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running unit tests")
-  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], unit_tests_intermediate_dir, "ninja"))
   
   rc = 0
-  for program in unit_test_programs:
+  for program in unitTestPrograms:
     regis.diagnostics.log_info(f"running: {Path(program).name}")
     proc = regis.util.run_subprocess(program)
     new_rc = regis.util.wait_for_process(proc)
@@ -375,12 +377,11 @@ def __build_coverage(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building coverage code")
   return __build_files(["coverage"], ["clang"], coverage_intermediate_dir, projects, singleThreaded)
 
-def __run_coverage():
+def __run_coverage(unitTestPrograms):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running coverage")
-  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], coverage_intermediate_dir, "ninja"))
 
   rc = 0
-  for program in unit_test_programs:
+  for program in unitTestPrograms:
     regis.diagnostics.log_info(f"running: {Path(program).name}")
     os.environ["LLVM_PROFILE_FILE"] = __get_coverage_rawdata_filename(program) # this is what llvm uses to set the raw data filename for the coverage data
     proc = regis.util.run_subprocess(program)
@@ -389,7 +390,7 @@ def __run_coverage():
       regis.diagnostics.log_err(f"unit test failed for {program}") # use full path to avoid ambiguity
     rc |= new_rc
 
-  return unit_test_programs
+  return unitTestPrograms
 
 def __relocate_coverage_data(programsRun : list[str]):
   task_print = regis.task_raii_printing.TaskRaiiPrint("relocating coverage files")
@@ -460,12 +461,11 @@ def __build_address_sanitizer(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building address sanitizer code")
   return __build_files(["address_sanitizer"], ["clang"], asan_intermediate_dir, projects, singleThreaded)
 
-def __run_address_sanitizer():
+def __run_address_sanitizer(unitTestPrograms):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running address sanitizer tests")
-  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], asan_intermediate_dir, "ninja"))
   
   rc = 0
-  for program in unit_test_programs:
+  for program in unitTestPrograms:
     regis.diagnostics.log_info(f"running: {Path(program).name}")
     log_folder_path = Path(program).parent
     log_folder = log_folder_path.as_posix()
@@ -503,12 +503,11 @@ def __build_undefined_behavior_sanitizer(projects, singleThreaded : bool = False
   task_print = regis.task_raii_printing.TaskRaiiPrint("building undefined behavior sanitizer code")
   return __build_files(["undefined_behavior_sanitizer"], ["clang"], ubsan_intermediate_dir, projects, singleThreaded)
 
-def __run_undefined_behavior_sanitizer():
+def __run_undefined_behavior_sanitizer(unitTestPrograms):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running undefined behavior sanitizer tests")
-  unit_test_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], ubsan_intermediate_dir, "ninja"))
   
   rc = 0
-  for program in unit_test_programs:
+  for program in unitTestPrograms:
     regis.diagnostics.log_info(f"running: {Path(program).name}")
     log_folder_path = Path(program).parent
     log_folder = log_folder_path.as_posix()
@@ -544,12 +543,11 @@ def __build_fuzzy_testing(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
   return __build_files(["fuzzy"], ["clang"], fuzzy_intermediate_dir, projects, singleThreaded)
 
-def __run_fuzzy_testing():
+def __run_fuzzy_testing(fuzzyPrograms):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
-  fuzzy_programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], fuzzy_intermediate_dir, "ninja"))
   
   rc = 0
-  for program in fuzzy_programs:
+  for program in fuzzyPrograms:
     regis.diagnostics.log_info(f"running: {Path(program).name}")
     log_folder_path = Path(program).parent
     log_folder = log_folder_path.as_posix()
@@ -586,52 +584,78 @@ def __generate_auto_tests(shouldClean):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  return __generate_test_files(f"/noClangTools /intermediateDir(\"{auto_test_intermediate_dir}\")")
+  return __generate_test_files(f"/noClangTools /enableAutoTests /intermediateDir(\"{auto_test_intermediate_dir}\")")
 
 def __build_auto_tests(configs, compilers, projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
   return __build_files(configs, compilers, auto_test_intermediate_dir, projects, singleThreaded)
 
-def __run_auto_tests(timeoutInSeconds):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
-  programs = __find_programs(os.path.join(settings["intermediate_folder"], settings["build_folder"], auto_test_intermediate_dir, "ninja"))
-  
-  rc = 0
-  for program in programs:
-    regis.diagnostics.log_info(f"running: {Path(program).name}")
-    proc = regis.util.run_subprocess(program)
-
-    # wait for program to finish on a different thread so we can terminate it on timeout
-    thread = threading.Thread(target=lambda: proc.wait())
-    thread.start()
-
-    # wait for timeout to trigger or until the program exits
-    now = time.time()
-    duration = 0
-    killed_process = False
-    max_seconds = timeoutInSeconds
-    while True:
-      duration = time.time() - now
-      if not thread.is_alive():
-        break
-      
-      if duration > max_seconds:
-        proc.terminate() 
-        killed_process = True
-        break
-
-    # makes sure that we get an error code even if the program crashed
-    proc.communicate()
-    new_rc = proc.returncode
+def __process_tests_file(file, programs, timeoutInSeconds):
+  json_blob = regis.rex_json.load_file(file)
     
-    if new_rc != 0:
-      if killed_process:
-        regis.diagnostics.log_warn(f"auto test timeout triggered for {program} after {max_seconds} seconds") # use full path to avoid ambiguity
-      else:
-        rc |= new_rc
-        regis.diagnostics.log_err(f"auto test failed for {program} with returncode {new_rc}") # use full path to avoid ambiguity
+  results = {}
 
-  return rc
+  for test in json_blob:
+    command_line = json_blob[test]["command_line"]
+
+    rc = 0
+    for program in programs:
+      regis.diagnostics.log_info(f"running: {Path(program).name}")
+      regis.diagnostics.log_info(f"with command line: {command_line}")
+      proc = regis.util.run_subprocess(f"{program} {command_line}")
+
+      # wait for program to finish on a different thread so we can terminate it on timeout
+      thread = threading.Thread(target=lambda: proc.wait())
+      thread.start()
+
+      # wait for timeout to trigger or until the program exits
+      now = time.time()
+      duration = 0
+      killed_process = False
+      max_seconds = timeoutInSeconds
+      while True:
+        duration = time.time() - now
+        if not thread.is_alive():
+          break
+        
+        if duration > max_seconds:
+          proc.terminate() 
+          killed_process = True
+          break
+
+      # makes sure that we get an error code even if the program crashed
+      proc.communicate()
+      new_rc = proc.returncode
+      
+      if new_rc != 0:
+        if killed_process:
+          regis.diagnostics.log_err(f"auto test timeout triggered for {program} after {max_seconds} seconds") # use full path to avoid ambiguity
+        else:
+          rc |= new_rc
+          regis.diagnostics.log_err(f"auto test failed for {program} with returncode {new_rc}") # use full path to avoid ambiguity
+
+      results[program] = rc
+
+  return results
+
+def __run_auto_tests(executbales, timeoutInSeconds):
+  task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
+  
+  test_dir = os.path.join(root_path, settings["tests_folder"])
+
+  files = __find_files(test_dir, lambda file: Path(file).name == "tests.json")
+
+  results : list[dict] = []
+
+  for file in files:
+    results.append(__process_tests_file(file, executbales, timeoutInSeconds))
+
+  for res in results:
+    values = list(res.values())
+    if (len(values) != values.count(0)):
+      return 1
+
+  return 0
 
 # public API
 def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False, shouldFix : bool = False):
@@ -659,13 +683,17 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
   __pass_results["unit tests generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_tests(projects, singleThreaded)
+  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
+    rc |= __build_tests(projects, singleThreaded)
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build tests")
   __pass_results["unit tests building"] = rc
 
+  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_unit_tests()
+  rc |= __run_unit_tests(executables)
   if rc != 0:
     regis.diagnostics.log_err(f"unit tests failed")
   __pass_results["unit tests result"] = rc
@@ -678,13 +706,17 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
   __pass_results["coverage generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = __build_coverage(projects, singleThreaded)
+  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
+    rc = __build_coverage(projects, singleThreaded)
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build coverage")
   __pass_results["coverage building"] = rc
 
+  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  programs_run = __run_coverage()
+  programs_run = __run_coverage(executables)
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rawdata_files = __relocate_coverage_data(programs_run)
@@ -712,13 +744,17 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
   __pass_results["address sanitizer generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_address_sanitizer(projects, singleThreaded)
+  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
+    rc |= __build_address_sanitizer(projects, singleThreaded)
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build asan code")
   __pass_results["address sanitizer building"] = rc
-  
+
+  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_address_sanitizer()
+  rc |= __run_address_sanitizer(executables)
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with asan")
   __pass_results["address sanitizer result"] = rc
@@ -731,13 +767,17 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
   __pass_results["undefined behavior sanitizer generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_undefined_behavior_sanitizer(projects, singleThreaded)
+  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
+    rc |= __build_undefined_behavior_sanitizer(projects, singleThreaded)
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build ubsan code")
   __pass_results["undefined behavior sanitizer building"] = rc
-  
+
+  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_undefined_behavior_sanitizer()
+  rc |= __run_undefined_behavior_sanitizer(executables)
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with ubsan")
   __pass_results["undefined behavior sanitizer result"] = rc
@@ -750,13 +790,17 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
   __pass_results["fuzzy testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_fuzzy_testing(projects, singleThreaded)
+  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
+    rc |= __build_fuzzy_testing(projects, singleThreaded)
+  
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build fuzzy code")
   __pass_results["fuzzy testing building"] = rc
-  
+
+  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_fuzzy_testing()
+  rc |= __run_fuzzy_testing(executables)
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with fuzzy")
   __pass_results["fuzzy testing result"] = rc
@@ -771,13 +815,17 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
   __pass_results["auto testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __build_auto_tests(configs, compilers, projects, singleThreaded)
+
+  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
+    rc |= __build_auto_tests(configs, compilers, projects, singleThreaded)
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build auto test code")
   __pass_results["auto testing building"] = rc
-  
+
+  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= __run_auto_tests(timeoutInSeconds)
+  rc |= __run_auto_tests(executables, timeoutInSeconds)
   if rc != 0:
     regis.diagnostics.log_err(f"auto tests failed")
   __pass_results["auto testing result"] = rc
