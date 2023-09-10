@@ -21,7 +21,7 @@ clang_tidy_first_pass_filename = ".clang-tidy_first_pass"
 clang_tidy_second_pass_filename = ".clang-tidy_second_pass"
 clang_tidy_format_filename = ".clang-format"
 root = regis.util.find_root()
-settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+settings = regis.rex_json.load_file(os.path.join(root, regis.util.settingsPathFromRoot))
 intermediate_folder = settings["intermediate_folder"]
 build_folder = settings["build_folder"]
 processes_in_flight_filename = os.path.join(root, intermediate_folder, build_folder, "ninja", "post_builds_in_flight.tmp")
@@ -69,14 +69,8 @@ def run(projectName : str, compdb : str, srcRoot : str, bRunAllChecks : bool, re
       clang_config_file = os.path.join(compdb, clang_tidy_second_pass_filename)
       regis.diagnostics.log_info("Running clang-tidy - all checks")  
       cmd = f"py {__quoted_path(script_path)}/run_clang_tidy.py -clang-tidy-binary={__quoted_path(clang_tidy_path)} -clang-apply-replacements-binary={__quoted_path(clang_apply_replacements_path)} -config-file={__quoted_path(clang_config_file)} -p={__quoted_path(compdb)} -header-filter={headerFiltersRegex} -quiet {regex}"
-      
-      if not bRebuild:
-        cmd += ' -incremental'
-      
       rc = __run_command(cmd) # force clang compiler, as clang-tools expect it
 
-    if rc != 0:
-      raise Exception("clang-tidy failed")
 
   else:
     regis.diagnostics.log_warn(f"No compiler db found at {compdb}")

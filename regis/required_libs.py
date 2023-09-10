@@ -22,7 +22,7 @@ import shutil
 from pathlib import Path
 
 root = regis.util.find_root()
-settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+settings = regis.rex_json.load_file(os.path.join(root, regis.util.settingsPathFromRoot))
 build_dir = os.path.join(root, settings["build_folder"])
 temp_dir = os.path.join(root, settings["intermediate_folder"])
 tools_install_dir = os.path.join(temp_dir, settings["tools_folder"])
@@ -38,7 +38,7 @@ not_found_libs = []
 
 def __load_required_libs_dict():
   libs_required = []
-  json_blob = regis.rex_json.load_file(os.path.join(root, "build", "config", "required_libs.json"))
+  json_blob = regis.rex_json.load_file(os.path.join(root, "_build", "config", "required_libs.json"))
   for object in json_blob:
     libs_required.append(json_blob[object])
 

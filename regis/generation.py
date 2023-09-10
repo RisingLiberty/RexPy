@@ -9,7 +9,7 @@ import regis.diagnostics
 from pathlib import Path
 
 root = regis.util.find_root()
-settings = regis.rex_json.load_file(os.path.join(root, "build", "config", "settings.json"))
+settings = regis.rex_json.load_file(os.path.join(root, regis.util.settingsPathFromRoot))
 temp_dir = os.path.join(root, settings["intermediate_folder"])
 tools_install_dir = os.path.join(temp_dir, settings["tools_folder"])
 tool_paths_filepath = os.path.join(tools_install_dir, "tool_paths.json")
@@ -46,7 +46,7 @@ def __scan_for_sharpmake_files(settingsPath : str):
   all searches are done recursively.
   """
   settings = regis.rex_json.load_file(settingsPath)
-  sharpmake_root = os.path.join(root, settings["build_folder"], "sharpmake")
+  sharpmake_root = os.path.join(root, "_build", "sharpmake")
   source_root = os.path.join(root, settings["source_folder"])
   tests_root = os.path.join(root, settings["tests_folder"])
   
@@ -80,33 +80,3 @@ def new_generation(settingsPath : str, sharpmakeArgs : str = ""):
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
   return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics {sharpmakeArgs}")
-
-def generate_compiler_db(project, config):
-  project_file_path = regis.util.find_ninja_project(project)
-
-  if project_file_path == "":
-    regis.diagnostics.log_err(f"project '{project}' was not found, have you generated it?")
-    return 1
-  
-  json_blob = regis.rex_json.load_file(project_file_path)
-
-  project_lower = project.lower()
-  compiler_lower = "clang"
-  config_lower = config.lower()
-
-  if compiler_lower not in json_blob[project_lower]:
-    regis.diagnostics.log_err(f"no compiler '{compiler_lower}' found for project '{project}'")
-    return 1
-  
-  if config not in json_blob[project_lower][compiler_lower]:
-    regis.diagnostics.log_err(f"no config '{config}' found in project '{project}' for compiler '{compiler_lower}'")
-    return 1
-
-  ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
-  regis.diagnostics.log_info(f"Generating Compiler Database for: {project} - {config}")
-
-  ninja_path = tool_paths_dict["ninja_path"]
-  proc = regis.subproc.run(f"{ninja_path} -f {ninja_file} compdb_{project}_{config}_clang")
-  proc.wait()
-  return proc.returncode
-

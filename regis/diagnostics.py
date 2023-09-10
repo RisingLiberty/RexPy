@@ -29,13 +29,13 @@ class Logger(object):
     termcolor.cprint(f"{msg}", "magenta")
 
   def info(self, msg):
-    termcolor.cprint(f"{msg}", "green")
+    termcolor.cprint(f"{msg}", "light_green")
 
   def warning(self, msg):
     termcolor.cprint(f"{msg}", "yellow")
 
   def error(self, msg):
-    termcolor.cprint(f"{msg}", "red")
+    termcolor.cprint(f"{msg}", "light_red")
 
   def critical(self, msg):
     self.logger.error(f"-- Critical Error Occurred --")

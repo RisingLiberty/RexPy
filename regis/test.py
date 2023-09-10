@@ -285,10 +285,10 @@ def __find_projects_with_suffix(directory):
 def __build_files(configs : list[str], compilers : list[str], intermediateDir : str, projectsToBuild : list[str] = "", singleThreaded : bool = False):
   should_clean = False
 
-  result = [0]
+  result_arr = []
 
   def __run(prj, cfg, comp, intermediateDir, shouldClean, result):
-    result[0] |= regis.build.new_build(prj, cfg, comp, intermediateDir, shouldClean)
+    result.append(regis.build.new_build(prj, cfg, comp, intermediateDir, shouldClean))
 
   intermediate_folder = settings["intermediate_folder"]
   build_folder = settings["build_folder"]
@@ -302,7 +302,7 @@ def __build_files(configs : list[str], compilers : list[str], intermediateDir : 
     if len(projectsToBuild) == 0 or project.lower() in (project_to_build.lower() for project_to_build in projectsToBuild):
       for config in configs:
         for compiler in compilers:
-          thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result))
+          thread = threading.Thread(target=__run, args=(project, config, compiler, directory, should_clean, result_arr))
           thread.start()
 
           if singleThreaded:
@@ -313,7 +313,9 @@ def __build_files(configs : list[str], compilers : list[str], intermediateDir : 
   for thread in threads:
     thread.join()
 
-  return result[0]
+  # if any result return code is different than 0
+  # a build has failed somewhere
+  return result_arr.count(0) != len(result_arr)
 
 def __find_files(folder, predicate):
   found_files : list[str] = []
@@ -325,10 +327,6 @@ def __find_files(folder, predicate):
         found_files.append(path)      
   
   return found_files
-
-def __find_programs(folder):
-  regis.diagnostics.log_info(f"looking for executables in {os.path.join(root_path, folder)}")
-  return __find_files(folder, lambda file: regis.util.is_executable(file))
 
 def __create_full_intermediate_dir(dir):
   return os.path.join(settings["intermediate_folder"], settings["build_folder"], dir)
@@ -638,7 +636,7 @@ def __process_tests_file(file, programs, timeoutInSeconds):
 
   return results
 
-def __run_auto_tests(executbales, timeoutInSeconds):
+def __run_auto_tests(programs, timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
   
   test_dir = os.path.join(root_path, settings["tests_folder"])
@@ -648,7 +646,7 @@ def __run_auto_tests(executbales, timeoutInSeconds):
   results : list[dict] = []
 
   for file in files:
-    results.append(__process_tests_file(file, executbales, timeoutInSeconds))
+    results.append(__process_tests_file(file, programs, timeoutInSeconds))
 
   for res in results:
     values = list(res.values())
@@ -750,7 +748,7 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build asan code")
   __pass_results["address sanitizer building"] = rc
-
+  
   executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -773,7 +771,7 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build ubsan code")
   __pass_results["undefined behavior sanitizer building"] = rc
-
+  
   executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -792,7 +790,7 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
     rc |= __build_fuzzy_testing(projects, singleThreaded)
-  
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build fuzzy code")
   __pass_results["fuzzy testing building"] = rc
@@ -815,13 +813,13 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
   __pass_results["auto testing generation"] = rc
   
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-
   with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
     rc |= __build_auto_tests(configs, compilers, projects, singleThreaded)
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build auto test code")
   __pass_results["auto testing building"] = rc
-
+  
   executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
