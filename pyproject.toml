@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "regis"
-version = "0.1.43"
+version = "0.1.44"
 authors = [
   { name="Nick De Breuck", email="nick.debreuck@outlook.com" },
 ]
@@ -17,7 +17,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "requests", "termcolor>=2.2.0", "psutil", "filelock", "gitpython"
+  "requests", "termcolor>=2.2.0", "psutil", "filelock", "gitpython", "watchdog"
 ]
 
 [project.urls]
