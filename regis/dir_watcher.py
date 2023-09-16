@@ -20,8 +20,8 @@ class DirWatcher():
         self.observer = Observer()
         self.observer.schedule(self.event_handler, path, recursive=go_recursively)
 
-        self.created_or_modified_files = []
-        self.deleted_files = []
+        self.created_or_modified_files : list[str] = []
+        self.deleted_files : list[str] = []
 
     def __enter__(self):
         self.observer.start()       
@@ -52,3 +52,10 @@ class DirWatcher():
         
         if event.src_path not in self.deleted_files:
             self.deleted_files.append(event.src_path)
+
+    def filter_created_or_modified_files(self, func):
+        return list(filter(func, self.created_or_modified_files))
+    
+    def filter_deleted_files(self, func):
+        return list(filter(func, self.created_or_modified_files))
+
