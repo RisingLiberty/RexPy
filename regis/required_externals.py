@@ -166,6 +166,23 @@ def __install_external(external):
 
         regis.util.create_version_file(externals_dir, external_tag)   
 
+def query():
+    externals_required = __load_externals_required()
+    if externals_required == None:
+        regis.diagnostics.log_err("Required externals is None, exiting ...")
+        return
+    
+    root = regis.util.find_root()
+    for external in externals_required:
+
+        external_tag = external["tag"]
+        external_name = external["name"]
+        external_store = external["storage"]
+        external_store = external_store.replace("~", root)
+        externals_dir = os.path.join(external_store, external_name)
+
+        __verify_external(externals_dir, external_tag)
+
 def run():
     regis.diagnostics.log_info("Start installing externals ...")
 

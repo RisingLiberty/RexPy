@@ -238,6 +238,9 @@ def __install():
     if len(paths_not_found) > 0:
       regis.diagnostics.log_err(f"failed to install {config_name}")
   
+def query():
+  __are_installed()
+
 def run():
   if not __are_installed():
     __download()

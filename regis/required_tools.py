@@ -54,6 +54,11 @@ def __look_for_tools(required_tools):
     path = os.path.join(tools_install_dir, required_tool["archive_name"])
     version = regis.util.load_version_file(path)
 
+    if not version:
+      regis.diagnostics.log_err(f"{stem} not found")
+      not_found_tools.append(required_tool)
+      continue
+
     # check if our version is up to date
     if version != required_tool["version"]:
       regis.diagnostics.log_err(f"{stem} is out of date")
@@ -110,7 +115,7 @@ def are_installed():
     regis.rex_json.save_file(tool_paths_filepath, tool_paths_dict)
     return True
   else:
-    regis.diagnostics.log_warn(f"Tools that weren't found: ")
+    regis.diagnostics.log_warn(f"Tools that weren't found or were out of date: ")
     for tool in not_found_tools:
       regis.diagnostics.log_warn(f"\t-{tool['stem']}")
 
@@ -242,6 +247,10 @@ def install():
   
   # save cached paths to disk
   regis.rex_json.save_file(tool_paths_filepath, tool_paths_dict)
+
+def query():
+  """Query which required tools are still missing on the current machine."""
+  are_installed()
 
 def run():
   if not are_installed():
