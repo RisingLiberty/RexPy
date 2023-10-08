@@ -22,7 +22,7 @@ def load_version_file(directory):
     if version_data != None:
       return version_data["tag"]
 
-  return ''
+  return None
 
 def env_paths():
   envPath = os.environ["PATH"]
