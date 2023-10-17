@@ -11,18 +11,19 @@ from requests.structures import CaseInsensitiveDict
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
 
-def find_sln_in_cwd():
-  dirs = os.listdir()
+def find_sln(directory):
+  dirs = os.listdir(directory)
 
   res = []
 
   for dir in dirs:
-    if os.path.isfile(dir) and Path(dir).suffix == ".nsln":
-      res.append(dir)
+    full_path = os.path.join(directory, dir)
+    if os.path.isfile(full_path) and Path(full_path).suffix == ".nsln":
+      res.append(full_path)
     
   return res
 
-def __launch_new_build(sln_file : str, project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = ""):
+def __launch_new_build(sln_file : str, project : str, config : str, compiler : str, shouldClean : bool, alreadyBuild : list[str], intermediateDir : str = "", dontBuildDependencies = False):
   sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(sln_file))
   
   if project not in sln_jsob_blob:
@@ -36,8 +37,8 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
   compiler_lower = compiler.lower()
   config_lower = config.lower()
   
-  if compiler not in json_blob[project_lower]:
-    regis.diagnostics.log_err(f"no compiler '{compiler}' found for project '{project}'")
+  if compiler_lower not in json_blob[project_lower]:
+    regis.diagnostics.log_err(f"no compiler '{compiler_lower}' found for project '{project}'")
     return 1, alreadyBuild
   
   if config not in json_blob[project_lower][compiler_lower]:
@@ -46,7 +47,23 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
     return 1, alreadyBuild
 
   ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
-  dependencies = json_blob[project_lower][compiler_lower][config_lower]["dependencies"]
+
+  # first build the dependencies
+  if not dontBuildDependencies:
+    dependencies = json_blob[project_lower][compiler_lower][config_lower]["dependencies"]
+
+    for dependency in dependencies:
+      dependency_project_name = Path(dependency).stem
+
+      if dependency_project_name in alreadyBuild:
+        continue
+
+      res, buildProjects = __launch_new_build(sln_file, dependency_project_name, config, compiler, shouldClean, alreadyBuild, intermediateDir, dontBuildDependencies)
+      if res == 0:
+        alreadyBuild.append(dependency_project_name)
+      else:
+        regis.diagnostics.log_err(f"Failed to build {dependency_project_name}")
+        return res, alreadyBuild
 
   regis.diagnostics.log_info(f"Building: {project}")
 
@@ -62,7 +79,8 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
 
 def __look_for_sln_file_to_use(slnFile : str):
   if slnFile == "":
-    sln_files = find_sln_in_cwd()
+    root = regis.util.find_root()
+    sln_files = find_sln(root)
 
     if len(sln_files) > 1:
       regis.diagnostics.log_err(f'more than 1 nsln file was found in the cwd, please specify which one you want to use')
@@ -73,7 +91,7 @@ def __look_for_sln_file_to_use(slnFile : str):
       return ""
     
     if len(sln_files) == 0:
-      regis.diagnostics.log_err(f'no nlsn found in {os.getcwd()}')
+      regis.diagnostics.log_err(f'no nlsn found in {root}')
       return ""
 
     slnFile = sln_files[0]
@@ -83,7 +101,7 @@ def __look_for_sln_file_to_use(slnFile : str):
   
   return slnFile
 
-def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False, slnFile : str = ""):
+def new_build(project : str, config : str, compiler : str, intermediateDir : str = "", shouldClean : bool = False, slnFile : str = "", dontBuildDependencies : bool = False):
   slnFile = __look_for_sln_file_to_use(slnFile)
 
   if slnFile == "":
@@ -91,6 +109,6 @@ def new_build(project : str, config : str, compiler : str, intermediateDir : str
     return 1
   
   already_build = []
-  res, build_projects = __launch_new_build(slnFile, project, config, compiler, shouldClean, already_build, intermediateDir)
+  res, build_projects = __launch_new_build(slnFile, project, config, compiler, shouldClean, already_build, intermediateDir, dontBuildDependencies)
   return res
   
