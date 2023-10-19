@@ -46,8 +46,11 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
     regis.diagnostics.log_err(f"no config '{config}' found in project '{project}' for compiler '{compiler}'")
     return 1, alreadyBuild
 
-  ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
-
+  if dontBuildDependencies:
+    ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file_no_deps"]
+  else:
+    ninja_file = json_blob[project_lower][compiler_lower][config_lower]["ninja_file"]
+    
   # first build the dependencies
   if not dontBuildDependencies:
     dependencies = json_blob[project_lower][compiler_lower][config_lower]["dependencies"]
@@ -57,7 +60,9 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
 
       if dependency_project_name in alreadyBuild:
         continue
-
+      
+      # if any of the dependencies have changed, we need to force a rebuild of the end exe if that's not a static lib.
+      # this is because they're not marked as dependencies in ninja, so they won't trigger a build of the targeted project.
       res, buildProjects = __launch_new_build(sln_file, dependency_project_name, config, compiler, shouldClean, alreadyBuild, intermediateDir, dontBuildDependencies)
       if res == 0:
         alreadyBuild.append(dependency_project_name)
@@ -66,14 +71,17 @@ def __launch_new_build(sln_file : str, project : str, config : str, compiler : s
         return res, alreadyBuild
 
   regis.diagnostics.log_info(f"Building: {project}")
-
   ninja_path = tool_paths_dict["ninja_path"]
+    
   if shouldClean:
     regis.diagnostics.log_info(f'Cleaning intermediates')
     proc = regis.subproc.run(f"{ninja_path} -f {ninja_file} -t clean")
     proc.wait()
 
-  proc = regis.subproc.run(f"{ninja_path} -f {ninja_file}")
+  regis.diagnostics.log_info(f'building ninja file: {ninja_file}')
+  # os.chdir(regis.util.find_root())
+  regis.diagnostics.log_info(f'building in: {os.getcwd()}')
+  proc = regis.subproc.run(f"{ninja_path} -f {ninja_file} -d explain")
   proc.wait()
   return proc.returncode, alreadyBuild
 
