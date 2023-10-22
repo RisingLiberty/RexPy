@@ -114,7 +114,7 @@ def find_in_parent(path, toFind):
 
   while toFind not in os.listdir(curr_path):
     if Path(curr_path).parent == curr_path:
-      diagnostics.log_err(f"{toFind} not found in parents of {path}")
+      regis.diagnostics.log_err(f"{toFind} not found in parents of {path}")
       return ''
 
     curr_path = Path(curr_path).parent
