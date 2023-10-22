@@ -1,5 +1,4 @@
 import os
-import json
 import requests
 import zipfile
 import shutil
@@ -9,13 +8,14 @@ import regis.diagnostics
 import regis.util
 import regis.rex_json
 
+root = regis.util.find_root()
+settings = regis.rex_json.load_file(os.path.join(root, regis.util.settingsPathFromRoot))
+temp_dir = os.path.join(root, settings["intermediate_folder"], 'tmp')
+
 class Host(Enum):
     UNKNOWN = 0
     GITLAB = 1
     GITHUB = 2
-
-def __get_script_path():
-    return os.path.dirname(os.path.realpath(__file__))
 
 def __get_host(path):
     if "gitlab" in path:
@@ -51,8 +51,6 @@ def __build_host_path(baseUrl, name, tag):
         return ""
 
 def __load_externals_required():
-    root = regis.util.find_root()
-
     json_blob = regis.rex_json.load_file(os.path.join(root, "_build", "config", "required_externals.json"))
     if json_blob == None:
         regis.diagnostics.log_err("Loaded json blob is None, stopping json parse")
@@ -65,15 +63,21 @@ def __load_externals_required():
     return externals_required
 
 def __download_external(url):
+    # create temporary directory to store cached files to
+    if not os.path.exists(temp_dir):
+        regis.diagnostics.log_info(f'creating: {temp_dir}')
+        os.mkdir(temp_dir)
+
     # get basename of the URL (a.k.a. the filename + extention we would like to download)
     url_basename = os.path.basename(url)
+    download_filepath = os.path.join(temp_dir, url_basename)
 
     # request a download of the given URL
-    if not os.path.exists(url_basename):
+    if not os.path.exists(download_filepath):
         response = requests.get(url)
         if response.status_code == requests.codes.ok:
             # write the downloaded file to disk
-            open(url_basename, "wb").write(response.content)
+            open(download_filepath, "wb").write(response.content)
         else:
             # bad request was made
             regis.diagnostics.log_err(f"Bad request [{str(response.status_code)}] for given url: {url}")
@@ -87,13 +91,13 @@ def __download_external(url):
     
     # pre list directories
     # cached directories before we downloaded anything
-    pre_list_dir = os.listdir(__get_script_path())
-    with zipfile.ZipFile(url_basename,"r") as zip_ref:
-        zip_ref.extractall(__get_script_path())
+    pre_list_dir = os.listdir(temp_dir)
+    with zipfile.ZipFile(download_filepath,"r") as zip_ref:
+        zip_ref.extractall(temp_dir)
 
     # post list directories
     # directories after we downloaded the repository
-    post_list_dir = os.listdir(__get_script_path())
+    post_list_dir = os.listdir(temp_dir)
 
     regis.diagnostics.log_info("Looking for added extracted directories ...")
     added_directory_names = []
@@ -104,7 +108,7 @@ def __download_external(url):
     regis.diagnostics.log_info(f"Found ({str(len(added_directory_names))}): ".join(added_directory_names))
 
     # remove the created zip file
-    os.remove(url_basename)
+    os.remove(download_filepath)
 
     return added_directory_names
 
@@ -124,8 +128,6 @@ def __verify_external(externalPath, requiredTag):
         return False
 
 def __install_external(external):
-    root = regis.util.find_root()
-
     external_url = external["url"]
     external_name = external["name"]
     external_tag = external["tag"]
@@ -147,7 +149,7 @@ def __install_external(external):
 
         if len(added_directories) == 1:
             # move to output directory
-            shutil.move(os.path.join(__get_script_path(), added_directories[0]), os.path.join(external_store, added_directories[0]))
+            shutil.move(os.path.join(temp_dir, added_directories[0]), os.path.join(external_store, added_directories[0]))
             # change directory name
             cwd = os.getcwd()
             os.chdir(external_store)
@@ -159,12 +161,16 @@ def __install_external(external):
                 os.makedirs(externals_dir)
             # move to output directory
             for added_directory in added_directories:
-                shutil.move(os.path.join(__get_script_path(), added_directory), externals_dir)
+                shutil.move(os.path.join(temp_dir, added_directory), externals_dir)
         else:
             regis.diagnostics.log_err("No directories where extracted.")
             return
 
         regis.util.create_version_file(externals_dir, external_tag)   
+
+def __remove_tmp_dir():
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
 
 def query():
     externals_required = __load_externals_required()
@@ -172,7 +178,6 @@ def query():
         regis.diagnostics.log_err("Required externals is None, exiting ...")
         return
     
-    root = regis.util.find_root()
     for external in externals_required:
 
         external_tag = external["tag"]
@@ -193,3 +198,5 @@ def run():
 
     for external in externals_required:
         __install_external(external)    
+
+    __remove_tmp_dir()
