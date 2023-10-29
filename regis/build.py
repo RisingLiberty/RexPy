@@ -25,7 +25,7 @@ class NinjaProject:
       return self.json_blob[self.project_name][compiler.lower()][config.lower()]["ninja_file_no_deps"]
 
   def dependencies(self, compiler : str, config : str):
-    return self.json_blob[project.lower()][compiler.lower()][config.lower()]["dependencies"]
+    return self.json_blob[self.project_name.lower()][compiler.lower()][config.lower()]["dependencies"]
 
   def clean(self, compiler : str, config : str, buildDependencies : bool):
     ninja_path = tool_paths_dict["ninja_path"]
