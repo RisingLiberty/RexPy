@@ -12,6 +12,9 @@ def create_version_file(directory : str, tag : str):
         "tag": tag
     }
 
+    if not os.path.exists(directory):
+      os.mkdir(directory)
+      
     path = os.path.join(directory, "version.json")
     regis.rex_json.save_file(path, version)
 
