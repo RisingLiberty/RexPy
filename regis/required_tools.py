@@ -4,6 +4,7 @@ import regis.rex_json
 import regis.util
 import regis.task_raii_printing
 import regis.diagnostics
+import regis.vs
 import requests
 import zipfile 
 import shutil
@@ -25,6 +26,7 @@ if os.path.exists(tool_paths_filepath):
   tool_paths_dict = regis.rex_json.load_file(tool_paths_filepath)
 required_tools = []
 not_found_tools = []
+found_tools = []
 
 def __load_required_tools_dict():
   tools_required = []
@@ -46,15 +48,59 @@ def __get_tool_extension(tool):
 
   return extension
 
-def __look_for_tools(required_tools):
-  paths = []
+def __get_msvc_paths(msvcRelPath : str):
+  res = []
+
+  installed_vs_versions = regis.vs.installed_versions()
+  tool_path = msvcRelPath
+  for installed_vs in installed_vs_versions:
+    msvc_path = os.path.join(installed_vs.installation_path, 'VC', 'Tools', tool_path)
+    if os.path.exists(msvc_path):
+      res.append(msvc_path)
     
+  return res
+
+def __get_possible_tool_install_dirs(requiredTool : dict):
+  res = []
+
+  # we purposely don't look in the PATH env variable
+  # as we cannot confidently check version of tools
+  # found in PATH.
+
+  # some tools have specific locations they can be installed at
+  if requiredTool['archive_name'] == 'MSVC':
+    res.extend(__get_msvc_paths(requiredTool['path']))
+
+  return res
+
+def __look_for_tool_on_system(requiredTool):
+    possible_paths = __get_possible_tool_install_dirs(requiredTool)
+
+    # look for the tool
+    exe_extension = __get_tool_extension(requiredTool)
+    tool_path = regis.util.find_file_in_paths(f"{requiredTool['stem']}{exe_extension}", possible_paths)
+
+    return tool_path
+
+def __look_for_tools(required_tools):   
   for required_tool in required_tools:
     stem = required_tool["stem"]
     path = os.path.join(tools_install_dir, required_tool["archive_name"])
     version = regis.util.load_version_file(path)
 
+    # If the version file is not found
+    # we look for the tool somewhere else on the system
     if not version:
+      tool_path = __look_for_tool_on_system(required_tool)
+      # if the tool is found, we save this path instead
+      # we don't download the tool from the web
+      if tool_path != '':
+        __print_tool_found(required_tool, tool_path)
+        tool_config_name = required_tool["config_name"]
+        tool_paths_dict[tool_config_name] = tool_path
+        found_tools.append(required_tool)
+        continue
+
       regis.diagnostics.log_err(f"{stem} not found")
       not_found_tools.append(required_tool)
       continue
@@ -79,7 +125,7 @@ def __look_for_tools(required_tools):
         continue
 
     # if not, add the path of the tool directory where it'd be downloaded to
-    paths_to_use = copy.deepcopy(paths)
+    paths_to_use = []
     paths_to_use.append(os.path.join(tools_install_dir, required_tool["path"]))
 
     # look for the tool
@@ -91,6 +137,7 @@ def __look_for_tools(required_tools):
       __print_tool_found(required_tool, tool_path)
       tool_config_name = required_tool["config_name"]
       tool_paths_dict[tool_config_name] = tool_path
+      found_tools.append(required_tool)
     # tool is not found, add it to the list to be looked for later
     else:
       not_found_tools.append(required_tool)
@@ -203,8 +250,10 @@ def __unzip_tools():
 
   regis.diagnostics.log_info(f"tools unzipped to {tools_install_dir}")
 
-def __create_version_files(toolsToDownload : []):
-  for tool in toolsToDownload:
+
+
+def __create_version_files(foundTools : []):
+  for tool in foundTools:
     path = os.path.join(tools_install_dir, tool["archive_name"])
     regis.util.create_version_file(path, tool["version"])
 
@@ -219,9 +268,8 @@ def __launch_download_thread(url):
 def download():
   task_print = regis.task_raii_printing.TaskRaiiPrint("Downloading tools")
   __make_zip_download_path()
-  tools_to_download = __download_tools_archive()
+  __download_tools_archive()
   __unzip_tools()
-  __create_version_files(tools_to_download)
   __delete_tmp_folders()
 
 def install():
@@ -245,6 +293,10 @@ def install():
       tool_config_name = tool["config_name"]
       tool_paths_dict[tool_config_name] = path
   
+  found_tools.extend(not_found_tools)
+
+  __create_version_files(found_tools)
+
   # save cached paths to disk
   regis.rex_json.save_file(tool_paths_filepath, tool_paths_dict)
 
