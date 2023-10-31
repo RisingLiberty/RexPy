@@ -108,7 +108,7 @@ def find_directory_in_paths(dir : str, directories : list[str]):
       if os.path.exists(path):
         return path
       else:
-        diagnostics.log_err(f"matching directory found, but doesn't exist: {path}")
+        regis.diagnostics.log_err(f"matching directory found, but doesn't exist: {path}")
 
   return None
 
