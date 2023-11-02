@@ -1,4 +1,7 @@
 import os
+import copy
+import argparse
+import shlex
 import regis.diagnostics
 import regis.rex_json
 import regis.util
@@ -15,7 +18,7 @@ tools_install_dir = os.path.join(temp_dir, settings["tools_folder"])
 tool_paths_filepath = os.path.join(tools_install_dir, "tool_paths.json")
 tool_paths_dict = regis.rex_json.load_file(tool_paths_filepath)
 
-def __find_sharpmake_files(directory):
+def _find_sharpmake_files(directory):
   sharpmakes_files = []
   for root, dirs, files in os.walk(directory):
     for file in files:
@@ -27,7 +30,7 @@ def __find_sharpmake_files(directory):
   
   return sharpmakes_files
 
-def __find_sharpmake_root_files(directory):
+def _find_sharpmake_root_files(directory):
   sharpmakes_files = []
   for root, dirs, files in os.walk(directory):
     for file in files:
@@ -39,44 +42,108 @@ def __find_sharpmake_root_files(directory):
 
   return sharpmakes_files
 
-def __scan_for_sharpmake_files(settingsPath : str):
+def _scan_for_sharpmake_files(settings : dict):
   """
   scans for sharpmake files in the current directory using the settings.
   it searches for all the sharpmake files in the sharpmake root, source folder and test folder.
   all searches are done recursively.
   """
-  settings = regis.rex_json.load_file(settingsPath)
   sharpmake_root = os.path.join(root, "_build", "sharpmake")
   source_root = os.path.join(root, settings["source_folder"])
   tests_root = os.path.join(root, settings["tests_folder"])
   
   sharpmakes_files = []
-  sharpmakes_files.extend(__find_sharpmake_root_files(sharpmake_root))
-  sharpmakes_files.extend(__find_sharpmake_files(source_root))
-  sharpmakes_files.extend(__find_sharpmake_files(tests_root))
+  sharpmakes_files.extend(_find_sharpmake_root_files(sharpmake_root))
+  sharpmakes_files.extend(_find_sharpmake_files(source_root))
+  sharpmakes_files.extend(_find_sharpmake_files(tests_root))
 
   return sharpmakes_files
 
-def new_generation(settingsPath : str, sharpmakeArgs : str = ""):
+def _save_config_file(settings : dict, config : dict):
+  """Create a new config file. This file will be passed over to sharpmake"""
+
+  config_dir = os.path.join(os.path.join(root, settings['intermediate_folder'], settings['build_folder']))
+  if not os.path.exists(config_dir):
+    os.mkdir(config_dir)
+
+  config_path = os.path.join(config_dir, 'config.json')
+  regis.rex_json.save_file(config_path, config)
+
+  return config_path.replace('\\', '/')
+
+def _make_optional_arg(arg : str):
+  return f'-{arg}'
+
+def _add_config_arguments(parser : argparse.ArgumentParser, defaultConfig : dict):
+  """Load the sharpmake config file from disk and add the options as arguments to this script."""
+  
+  for setting in defaultConfig:
+    arg = _make_optional_arg(setting)
+    val = defaultConfig[setting]['Value']
+    desc = defaultConfig[setting]['Description']
+    if 'Options' in defaultConfig[setting]:
+      desc += f' Options: {defaultConfig[setting]["Options"]}'
+    
+    if type(val) == bool:
+      parser.add_argument(arg, help=desc, action='store_true')
+    else:
+      parser.add_argument(arg, help=desc, default=val)
+
+def _load_default_config():
+  return regis.rex_json.load_file(os.path.join(root, "_build", "sharpmake", "data", "default_config.json"))
+
+def add_config_arguments_to_parser(parser):
+  _add_config_arguments(parser, _load_default_config())
+
+def create_config(args):
+  """Create a config dictionary based on the arguments passed in."""
+
+  if type(args) == str:
+    parser = argparse.ArgumentParser()
+    add_config_arguments_to_parser(parser)
+    args = parser.parse_args(shlex.split(args))
+
+  default_config : dict = regis.rex_json.load_file(os.path.join(root, "_build", "sharpmake", "data", "default_config.json"))
+  config : dict = copy.deepcopy(default_config)
+  for arg in vars(args):
+    arg_name = arg
+    arg_name = arg_name.replace('_', '-') # python converts all hyphens into underscores so we need to convert them back
+    arg_val = getattr(args, arg)
+
+    if arg_name in config:
+      config[arg_name]['Value'] = arg_val
+
+  return config
+
+def new_generation(settingsPath : str, config : dict):
   """
   performs a new generation using the sharpmake files found by searching the current directory recursively.
   '/diagnostics' is always added as a sharpmake arguments.
   """
 
-  sharpmake_files = __scan_for_sharpmake_files(settingsPath)
+  # save the config file to disk
+  settings = regis.rex_json.load_file(settingsPath)
+  config_path = _save_config_file(settings, config)
+
+  # scan recursively to find all the sharpmake files
+  sharpmake_files = _scan_for_sharpmake_files(settings)
   
+  # load the path where the sharpmake executable is located
   sharpmake_path = tool_paths_dict["sharpmake_path"]
   if len(sharpmake_path) == 0:
     regis.diagnostics.log_err("Failed to find sharpmake path")
     return
 
+  # make sure the sharpmake files are quoted, that's expected by sharpmake
   sharpmake_sources = ""
   for sharpmake_file in sharpmake_files:
     sharpmake_sources += "\""
     sharpmake_sources += sharpmake_file
     sharpmake_sources += "\", "
 
+  # replace all backwards slashes by forward slashes
   sharpmake_sources = sharpmake_sources[0:len(sharpmake_sources) - 2]
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
-  return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics {sharpmakeArgs}")
+  # run the actual executable
+  return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\")")
