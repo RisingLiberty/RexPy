@@ -255,7 +255,7 @@ def parse_file_summary(filepath):
       # diagnostics.log_err(f"This file is located at {Path(filepath).parent}")    
 
   if result != 0:
-    diagnostics.log_err(f"Errors reported in file: {filepath}")
+    diagnostics.log_err(f"No full coverage. More info found: {filepath}")
     diagnostics.log_err(f"Alternatively, investigate the line coverage file or html report located at {Path(filepath).parent}")    
 
   return result
