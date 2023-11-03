@@ -65,9 +65,6 @@ def _symbolic_print(line, filterLines : bool = False):
     regis.diagnostics.log_no_color(line)
 
 def _default_output_callback(pid, output, isStdErr, filterLines):
-  error_keywords = ["failed", "error"]
-  warn_keywords = ["warning"]
-
   logs_dir = os.path.join(settings["intermediate_folder"], "logs")
   filename = f"output_{pid}.log"
   if isStdErr:
