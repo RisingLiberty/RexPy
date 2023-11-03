@@ -130,7 +130,7 @@ def _run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, si
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  generated_files = _generate_test_files(regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty'))
+  generated_files = _generate_test_files(regis.generation.create_config(f'-intermediate-dir={iwyu_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None'))
 
   # get the compiler dbs that are just generated
   result = list(filter(lambda file: 'compile_commands.json' in file, generated_files))
@@ -258,7 +258,7 @@ def _run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  generated_files = _generate_test_files(regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty'))
+  generated_files = _generate_test_files(regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None'))
 
   # get the compiler dbs that are just generated
   result = list(filter(lambda file: 'compile_commands.json' in file, generated_files))
@@ -515,7 +515,7 @@ def _generate_address_sanitizer(shouldClean):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  return _generate_test_files(f"/noClangTools /generateUnitTests /EnableAsan /DisableDefaultGeneration /intermediateDir(\"{asan_intermediate_dir}\")")
+  return _generate_test_files(regis.generation.create_config(f'-intermediate-dir={asan_intermediate_dir} -disable-clang-tidy-for-thirdparty -enable-unit-tests -enable-address-sanitizer -IDE None'))
 
 def _build_address_sanitizer(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building address sanitizer code")
@@ -557,7 +557,7 @@ def _generate_undefined_behavior_sanitizer(shouldClean):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  return _generate_test_files(f"/generateUnitTests /EnableUBsan  /DisableDefaultGeneration /intermediateDir(\"{ubsan_intermediate_dir}\")")
+  return _generate_test_files(regis.generation.create_config(f'-intermediate-dir={ubsan_intermediate_dir} -disable-clang-tidy-for-thirdparty -enable-unit-tests -enable-ub-sanitizer -IDE None'))
 
 def _build_undefined_behavior_sanitizer(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building undefined behavior sanitizer code")
@@ -597,7 +597,7 @@ def _generate_fuzzy_testing(shouldClean):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  return _generate_test_files(f"/EnableFuzzyTests /DisableDefaultGeneration /intermediateDir(\"{fuzzy_intermediate_dir}\")")
+  return _generate_test_files(regis.generation.create_config(f"-enable-fuzzy-testing -intermediate-dir={fuzzy_intermediate_dir} -IDE None"))
 
 def _build_fuzzy_testing(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
@@ -644,7 +644,7 @@ def _generate_auto_tests(shouldClean):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  return _generate_test_files(f"/noClangTools /enableAutoTests /intermediateDir(\"{auto_test_intermediate_dir}\")")
+  return _generate_test_files(regis.generation.create_config(f"-no-clang-tools -enable-auto-tests -intermediate-dir={auto_test_intermediate_dir} -IDE None"))
 
 def _build_auto_tests(configs, compilers, projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
@@ -748,7 +748,8 @@ def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded
 
 def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_unit_tests(shouldClean)
+  generated_files = _generate_unit_tests(shouldClean)
+  rc = len(generated_files) == 0
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate tests")
   _pass_results["unit tests generation"] = rc
@@ -807,20 +808,20 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
 
 def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_address_sanitizer(shouldClean)
+  generated_files = _generate_address_sanitizer(shouldClean)
+  rc = len(generated_files) == 0
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate asan code")
   _pass_results["address sanitizer generation"] = rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
-    rc |= _build_address_sanitizer(projects, singleThreaded)
+  rc |= _build_address_sanitizer(projects, singleThreaded)
 
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build asan code")
   _pass_results["address sanitizer building"] = rc
   
-  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+  executables = _find_files(_create_full_intermediate_dir(asan_intermediate_dir), lambda file: file.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _run_address_sanitizer(executables)
@@ -830,7 +831,8 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
 
 def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_undefined_behavior_sanitizer(shouldClean)
+  generated_files = _generate_undefined_behavior_sanitizer(shouldClean)
+  rc = len(generated_files) == 0
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate ubsan code")
   _pass_results["undefined behavior sanitizer generation"] = rc
@@ -843,7 +845,7 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
     regis.diagnostics.log_err(f"failed to build ubsan code")
   _pass_results["undefined behavior sanitizer building"] = rc
   
-  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+  executables = _find_files(_create_full_intermediate_dir(ubsan_intermediate_dir), lambda file: file.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _run_undefined_behavior_sanitizer(executables)
@@ -853,7 +855,9 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
 
 def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_fuzzy_testing(shouldClean)
+  generated_files = _generate_fuzzy_testing(shouldClean)
+  rc = len(generated_files) == 0
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate fuzzy code")
   _pass_results["fuzzy testing generation"] = rc
@@ -866,7 +870,7 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
     regis.diagnostics.log_err(f"failed to build fuzzy code")
   _pass_results["fuzzy testing building"] = rc
 
-  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+  executables = _find_files(_create_full_intermediate_dir(fuzzy_intermediate_dir), lambda file: file.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _run_fuzzy_testing(executables)
@@ -878,7 +882,9 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
   rc = 0
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_auto_tests(shouldClean)
+  generated_files = _generate_auto_tests(shouldClean)
+  rc = len(generated_files) == 0
+  
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate auto test code")
   _pass_results["auto testing generation"] = rc
@@ -891,7 +897,7 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
     regis.diagnostics.log_err(f"failed to build auto test code")
   _pass_results["auto testing building"] = rc
   
-  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
+  executables = _find_files(_create_full_intermediate_dir(auto_test_intermediate_dir), lambda file: file.endswith('.exe'))
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _run_auto_tests(executables, timeoutInSeconds)
