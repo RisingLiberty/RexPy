@@ -23,9 +23,6 @@ class DirWatcher():
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        # Wait 1.5 seconds, making sure all event are processed
-        time.sleep(1.5)
-
         self.observer.stop()
         self.observer.join()
 
