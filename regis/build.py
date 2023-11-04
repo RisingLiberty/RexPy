@@ -10,7 +10,6 @@ from pathlib import Path
 from requests.structures import CaseInsensitiveDict
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
-already_build : list[str] = []
 
 class NinjaProject:
   def __init__(self, filepath):
@@ -52,11 +51,13 @@ class NinjaProject:
     if buildDependencies:
       r |= self._build_dependencies(compiler, config)
 
-    regis.diagnostics.log_info(f"Building: {self.project_name}")
+    regis.diagnostics.log_info(f"Building: {self.project_name} - {config} - {compiler}")
 
     # then build the project we specified
     ninja_path = tool_paths_dict["ninja_path"]
-    proc = regis.subproc.run(f"{ninja_path} -f {self.ninja_file(compiler, config, buildDependencies)}")
+    cmd = f"{ninja_path} -f {self.ninja_file(compiler, config, buildDependencies)}"
+    regis.diagnostics.log_info(f'executing: {cmd}')
+    proc = regis.subproc.run(cmd)
     proc.wait()
     r = proc.returncode
 
@@ -89,18 +90,14 @@ class NinjaProject:
 
   def _build_dependencies(self, compiler, config):
     dependencies = self.json_blob[self.project_name][compiler][config]["dependencies"]
-    r = 0
-    for dependency in dependencies:
-      dependency_project_name = Path(dependency).stem
 
-      # Don't build it if we're already build it
-      if dependency_project_name in already_build:
-        continue
-      
+    r = 0
+    for dependency in dependencies:      
+      dependency_project_name = Path(dependency).stem
+      regis.diagnostics.log_info(f'Building dependency: {self.project_name} -> {dependency_project_name}')
+
       dependency_project = NinjaProject(dependency)
       r |= dependency_project.build(compiler, config, buildDependencies=True)
-
-      already_build.append(dependency_project_name)
 
     return r
 
