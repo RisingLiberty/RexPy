@@ -4,15 +4,21 @@ import regis.rex_json
 import regis.util
 import regis.diagnostics
 import regis.subproc
+import regis.dir_watcher
 
 from pathlib import Path
 
 from requests.structures import CaseInsensitiveDict
 
 tool_paths_dict = regis.required_tools.tool_paths_dict
+root = regis.util.find_root()  
+settings_path = os.path.join(root, regis.util.settingsPathFromRoot)
+settings = regis.rex_json.load_file(settings_path)
+intermediate_path = os.path.join(root, settings['intermediate_folder'], settings['build_folder'])
+build_projects_path = os.path.join(intermediate_path, settings['build_projects_filename'])
 
 class NinjaProject:
-  def __init__(self, filepath):
+  def _init_(self, filepath):
     self.json_blob : dict = regis.rex_json.load_file(filepath)
     self.filepath = filepath
     self.project_name = list(self.json_blob.keys())[0].lower() # the project name is the root key
@@ -102,6 +108,7 @@ class NinjaProject:
     return r
 
 def find_sln(directory):
+  """Find the ninja solution in the specified directory"""
   dirs = os.listdir(directory)
 
   res = []
@@ -113,7 +120,8 @@ def find_sln(directory):
     
   return res
 
-def __launch_new_build(sln_file : str, projectName : str, config : str, compiler : str, shouldBuild : bool, shouldClean : bool, buildDependencies = False):
+def _launch_new_build(sln_file : str, projectName : str, config : str, compiler : str, shouldBuild : bool, shouldClean : bool, buildDependencies = False):
+  """Load the solution, look for the project in the solution and build it"""
   sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(sln_file))
   
   if projectName not in sln_jsob_blob:
@@ -136,7 +144,8 @@ def __launch_new_build(sln_file : str, projectName : str, config : str, compiler
 
   return r
 
-def __look_for_sln_file_to_use(slnFile : str):
+def _look_for_sln_file_to_use(slnFile : str):
+  """Look for the specified sln. Look for a sln in the root if no solution path is specified."""
   if slnFile == "":
     root = regis.util.find_root()
     sln_files = find_sln(root)
@@ -160,13 +169,77 @@ def __look_for_sln_file_to_use(slnFile : str):
   
   return slnFile
 
+def _update_cleaned_projects(project : str, config : str, compiler : str, deletedPrograms : list[str]):
+  """Update the build projects file and remove all the projects that have been cleaned"""
+  build_projects = regis.rex_json.load_file(build_projects_path)
+
+  project = project.lower()
+  config = config.lower()
+  compiler = compiler.lower()
+
+  if project not in build_projects:
+    return
+  
+  build_project = build_projects[project]
+  if config not in build_project:
+    return
+  
+  build_config = build_projects[project][config]
+  if compiler not in build_config:
+    return
+  
+  build_programs : list[str] = build_projects[project][config][compiler]
+
+  for deleted_program in deletedPrograms:
+    if deleted_program in build_programs:
+      build_programs.remove(deleted_program)
+
+  regis.rex_json.save_file(build_projects_path, build_projects)
+
+def _update_build_projects(project : str, config : str, compiler : str, paths : list[str]):
+  """Update the build projects file and update the paths to new build projects"""
+  build_projects = regis.rex_json.load_file(build_projects_path)
+
+  project = project.lower()
+  config = config.lower()
+  compiler = compiler.lower()
+
+  if project not in build_projects:
+    build_projects[project] = {}
+  
+  build_project = build_projects[project]
+  if config not in build_project:
+    build_project[config] = {}
+    
+  build_projects[project][config][compiler] = paths
+
+  regis.rex_json.save_file(build_projects_path, build_projects)
+
 def new_build(project : str, config : str, compiler : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False):
-  slnFile = __look_for_sln_file_to_use(slnFile)
+  """This is the interface to the build pipeline.\n
+  It'll launch a new build for the project using the config and compiler specified.\n
+  It's possible to to negate building and only clean or to do a clean step before the build starts.\n
+  It's also possible to only build the project and not its dependencies"""
+  slnFile = _look_for_sln_file_to_use(slnFile)
 
   if slnFile == "":
     regis.diagnostics.log_err("unable to find solution, aborting..")
     return 1
   
-  res = __launch_new_build(slnFile, project, config, compiler, shouldBuild, shouldClean, buildDependencies)
+  with regis.dir_watcher.DirWatcher(intermediate_path, bRecursive=True) as dir_watcher:
+    res = _launch_new_build(slnFile, project, config, compiler, shouldBuild, shouldClean, buildDependencies)
+
+  programs_deleted = dir_watcher.filter_deleted_files(lambda path: path.endswith('.exe'))
+  programs_created = dir_watcher.filter_created_or_modified_files(lambda path: path.endswith('.exe'))
+
+  if not os.path.exists(build_projects_path):
+    regis.rex_json.save_file(build_projects_path, {})
+
+  # it's possible nothing gets done because everything is up to date
+  # in that case, we don't need to update anything
+  if len(programs_deleted) != 0 and len(programs_created) != 0:
+    _update_cleaned_projects(args.project, args.config, args.compiler, programs_deleted)
+    _update_build_projects(args.project, args.config, args.compiler, programs_created)
+
   return res
   
