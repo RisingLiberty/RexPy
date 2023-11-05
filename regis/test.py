@@ -255,10 +255,10 @@ def _run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool
     regis.util.remove_folders_recursive(intermediate_folder)
 
   # perform a new generation to make sure we actually have files to go over
-  generated_files = _generate_test_files(regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None'))
+  _generate_test_files(regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None'))
 
   # get the compiler dbs that are just generated
-  result = list(filter(lambda file: 'compile_commands.json' in file, generated_files))
+  result = _find_files(_create_full_intermediate_dir(clang_tidy_intermediate_dir), lambda file: 'compile_commands.json' in file)
 
   # create the clang-tidy jobs, we limit ourselves to 5 threads at the moment as running clang-tidy is quite performance heavy
   threads : list[threading.Thread] = []
