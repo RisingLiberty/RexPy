@@ -238,8 +238,8 @@ def new_build(project : str, config : str, compiler : str, shouldBuild : bool = 
   # it's possible nothing gets done because everything is up to date
   # in that case, we don't need to update anything
   if len(programs_deleted) != 0 and len(programs_created) != 0:
-    _update_cleaned_projects(args.project, args.config, args.compiler, programs_deleted)
-    _update_build_projects(args.project, args.config, args.compiler, programs_created)
+    _update_cleaned_projects(project, config, compiler, programs_deleted)
+    _update_build_projects(project, config, compiler, programs_created)
 
   return res
   
