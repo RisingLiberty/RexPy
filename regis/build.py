@@ -65,7 +65,7 @@ class NinjaProject:
     regis.diagnostics.log_info(f'executing: {cmd}')
     proc = regis.subproc.run(cmd)
     proc.wait()
-    r = proc.returncode
+    r |= proc.returncode
 
     # show error if any build failed
     if r != 0:
