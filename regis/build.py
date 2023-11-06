@@ -18,7 +18,7 @@ intermediate_path = os.path.join(root, settings['intermediate_folder'], settings
 build_projects_path = os.path.join(intermediate_path, settings['build_projects_filename'])
 
 class NinjaProject:
-  def _init_(self, filepath):
+  def __init__(self, filepath : str):
     self.json_blob : dict = regis.rex_json.load_file(filepath)
     self.filepath = filepath
     self.project_name = list(self.json_blob.keys())[0].lower() # the project name is the root key
