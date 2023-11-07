@@ -738,7 +738,7 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = _generate_coverage(shouldClean)
   _pass_results["coverage generation"] = len(rc) == 0
-  if not rc:
+  if rc != 0:
     regis.diagnostics.log_err(f"failed to generate coverage")
     return rc
 
