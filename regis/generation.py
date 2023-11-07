@@ -115,7 +115,7 @@ def create_config(args):
 
   return config
 
-def new_generation(settingsPath : str, config : dict):
+def new_generation(settingsPath : str, config : dict, sharpmakeArgs : list[str] = []):
   """
   performs a new generation using the sharpmake files found by searching the current directory recursively.
   '/diagnostics' is always added as a sharpmake arguments.
@@ -146,4 +146,4 @@ def new_generation(settingsPath : str, config : dict):
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
   # run the actual executable
-  return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\")")
+  return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\") {' '.join(sharpmakeArgs)}")
