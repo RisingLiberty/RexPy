@@ -81,11 +81,11 @@ class NinjaProject:
     return r
    
   def _valid_args_check(self, compiler : str, config : str):
-    if compiler not in self.json_blob[self.project_name]:
+    if compiler not in self.json_blob['configs']:
       regis.diagnostics.log_err(f"no compiler '{compiler}' found for project '{self.project_name}'")
       return 1
   
-    if config not in self.json_blob[self.project_name][compiler]:
+    if config not in self.json_blob['configs'][compiler]:
       regis.diagnostics.log_err(f"error in {self.filepath}")
       regis.diagnostics.log_err(f"no config '{config}' found in project '{self.project_name}' for compiler '{compiler}'")
       return 1
@@ -93,7 +93,7 @@ class NinjaProject:
     return 0
 
   def _build_dependencies(self, compiler, config):
-    dependencies = self.json_blob[self.project_name][compiler][config]["dependencies"]
+    dependencies = self.json_blob['configs'][compiler][config]["dependencies"]
 
     r = 0
     for dependency in dependencies:      
