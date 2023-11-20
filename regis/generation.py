@@ -67,7 +67,9 @@ def _save_config_file(settings : dict, config : dict):
     os.mkdir(config_dir)
 
   config_path = os.path.join(config_dir, 'config.json')
-  regis.rex_json.save_file(config_path, config)
+
+  if config:
+    regis.rex_json.save_file(config_path, config)
 
   return config_path.replace('\\', '/')
 
@@ -117,8 +119,9 @@ def create_config(args):
 
 def new_generation(settingsPath : str, config : dict, sharpmakeArgs : list[str] = []):
   """
-  performs a new generation using the sharpmake files found by searching the current directory recursively.
-  '/diagnostics' is always added as a sharpmake arguments.
+  performs a new generation using the sharpmake files found by searching the current directory recursively.\n
+  '/diagnostics' is always added as a sharpmake arguments.\n
+  If config is None the previous used config will be used for generation
   """
 
   # save the config file to disk
@@ -146,4 +149,6 @@ def new_generation(settingsPath : str, config : dict, sharpmakeArgs : list[str] 
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
   # run the actual executable
-  return regis.subproc.run(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\") {' '.join(sharpmakeArgs)}")
+  proc = regis.util.run_subprocess(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\") {' '.join(sharpmakeArgs)}")
+  regis.util.wait_for_process(proc)
+  return proc.returncode
