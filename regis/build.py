@@ -5,6 +5,7 @@ import regis.util
 import regis.diagnostics
 import regis.subproc
 import regis.dir_watcher
+import regis.generation
 
 from pathlib import Path
 
@@ -21,16 +22,13 @@ class NinjaProject:
   def __init__(self, filepath : str):
     self.json_blob : dict = regis.rex_json.load_file(filepath)
     self.filepath = filepath
-    self.project_name = list(self.json_blob.keys())[0].lower() # the project name is the root key
+    self.project_name = self.json_blob['name']
 
   def ninja_file(self, compiler : str, config : str, buildDependencies : bool):
-    if buildDependencies:
-      return self.json_blob[self.project_name][compiler.lower()][config.lower()]["ninja_file"]
-    else:
-      return self.json_blob[self.project_name][compiler.lower()][config.lower()]["ninja_file_no_deps"]
+    return self.json_blob['configs'][compiler.lower()][config.lower()]["ninja_file"]
 
   def dependencies(self, compiler : str, config : str):
-    return self.json_blob[self.project_name.lower()][compiler.lower()][config.lower()]["dependencies"]
+    return self.json_blob['configs'][compiler.lower()][config.lower()]["dependencies"]
 
   def clean(self, compiler : str, config : str, buildDependencies : bool):
     ninja_path = tool_paths_dict["ninja_path"]
@@ -219,7 +217,7 @@ def new_build(project : str, config : str, compiler : str, shouldBuild : bool = 
   """This is the interface to the build pipeline.\n
   It'll launch a new build for the project using the config and compiler specified.\n
   It's possible to to negate building and only clean or to do a clean step before the build starts.\n
-  It's also possible to only build the project and not its dependencies"""
+  It's also possible to only build the project and not its dependencies"""  
   slnFile = _look_for_sln_file_to_use(slnFile)
 
   if slnFile == "":
