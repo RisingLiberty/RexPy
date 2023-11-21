@@ -24,7 +24,7 @@ class NinjaProject:
     self.filepath = filepath
     self.project_name = self.json_blob['name']
 
-  def ninja_file(self, compiler : str, config : str, buildDependencies : bool):
+  def ninja_file(self, compiler : str, config : str):
     return self.json_blob['configs'][compiler.lower()][config.lower()]["ninja_file"]
 
   def dependencies(self, compiler : str, config : str):
@@ -38,7 +38,10 @@ class NinjaProject:
     if r != 0:
       return r
 
-    proc = regis.subproc.run(f"{ninja_path} -f {self.ninja_file(compiler, config, buildDependencies)} -t clean")
+    if buildDependencies:
+      self._clean_dependencies(compiler, config)
+
+    proc = regis.subproc.run(f"{ninja_path} -f {self.ninja_file(compiler, config)} -t clean")
     proc.wait()
 
     r = proc.returncode
@@ -59,7 +62,7 @@ class NinjaProject:
 
     # then build the project we specified
     ninja_path = tool_paths_dict["ninja_path"]
-    cmd = f"{ninja_path} -f {self.ninja_file(compiler, config, buildDependencies)}"
+    cmd = f"{ninja_path} -f {self.ninja_file(compiler, config)}"
     regis.diagnostics.log_info(f'executing: {cmd}')
     proc = regis.subproc.run(cmd)
     proc.wait()
@@ -102,6 +105,19 @@ class NinjaProject:
 
       dependency_project = NinjaProject(dependency)
       r |= dependency_project.build(compiler, config, buildDependencies=True)
+
+    return r
+
+  def _clean_dependencies(self, compiler, config):
+    dependencies = self.json_blob['configs'][compiler][config]["dependencies"]
+
+    r = 0
+    for dependency in dependencies:      
+      dependency_project_name = Path(dependency).stem
+      regis.diagnostics.log_info(f'Building dependency: {self.project_name} -> {dependency_project_name}')
+
+      dependency_project = NinjaProject(dependency)
+      r |= dependency_project.clean(compiler, config, buildDependencies=True)
 
     return r
 
