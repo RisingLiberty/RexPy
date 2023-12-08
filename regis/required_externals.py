@@ -128,6 +128,7 @@ def __verify_external(externalPath, requiredTag):
         return False
 
 def __install_external(external):
+    task_print = regis.task_raii_printing.TaskRaiiPrint("Installing externals..")
     external_url = external["url"]
     external_name = external["name"]
     external_tag = external["tag"]
@@ -189,8 +190,6 @@ def query():
         __verify_external(externals_dir, external_tag)
 
 def run():
-    regis.diagnostics.log_info("Start installing externals ...")
-
     externals_required = __load_externals_required()
     if externals_required == None:
         regis.diagnostics.log_err("Required externals is None, exiting ...")
