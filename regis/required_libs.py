@@ -200,7 +200,12 @@ def __are_installed():
   global not_found_libs
   not_found_libs = __look_for_required_libs(required_libs)
   
-  return len(not_found_libs) == 0
+  if len(not_found_libs) == 0:
+    regis.diagnostics.log_info(f'All libs found')
+  else:
+    regis.diagnostics.log_warn(f'Libs that weren\'t found or were out of date')
+    for lib in not_found_libs:
+      regis.diagnostics.log_warn(f"\t{lib['config_name']}")
 
 def __download():
   # create the temporary path for zips
