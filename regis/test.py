@@ -588,6 +588,27 @@ def _build_auto_tests(configs, compilers, projects, singleThreaded : bool = Fals
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
   return _build_files(configs, compilers, auto_test_intermediate_dir, projects, singleThreaded)
 
+def _find_tests_file(project : str):
+  # find the project file of the project
+  full_intermediate_dir = _create_full_intermediate_dir(auto_test_intermediate_dir)  
+  project_files = _find_files(full_intermediate_dir, lambda file: Path(file).stem.lower() == project.lower())
+
+  if not project_files:
+    return None
+  
+  if len(project_files) > 1:
+    return None
+
+  json_blob = regis.rex_json.load_file(project_files[0])
+  project_root = json_blob['root']
+
+  test_file_path = os.path.join(project_root, "tests.json")
+
+  if not os.path.exists(test_file_path):
+    return None
+
+  return test_file_path
+
 def _process_tests_file(file, programs, timeoutInSeconds):
   json_blob = regis.rex_json.load_file(file)
     
@@ -647,17 +668,12 @@ def _find_files(folder, predicate):
   
   return found_files
 
-def _run_auto_tests(programs, timeoutInSeconds):
+def _run_auto_tests(testFile, programs, timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
   
-  test_dir = os.path.join(root_path, settings["tests_folder"])
-
-  files = _find_files(test_dir, lambda file: Path(file).name == "tests.json")
-
   results : list[dict] = []
 
-  for file in files:
-    results.append(_process_tests_file(file, programs, timeoutInSeconds))
+  results.append(_process_tests_file(testFile, programs, timeoutInSeconds))
 
   for res in results:
     values = list(res.values())
@@ -875,13 +891,14 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
     regis.diagnostics.log_err(f"failed to build auto test code")
     return rc
   
-  executables = _find_files(_create_full_intermediate_dir(auto_test_intermediate_dir), lambda file: file.endswith('.exe'))
-
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _run_auto_tests(executables, timeoutInSeconds)
-  _pass_results["auto testing result"] = rc
-  if rc != 0:
-    regis.diagnostics.log_err(f"auto tests failed")
-    return rc
+  for project in projects:
+    executables = _find_files(_create_full_intermediate_dir(auto_test_intermediate_dir), lambda file: file.endswith('.exe'))
+    test_file = _find_tests_file(project)
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    rc |= _run_auto_tests(test_file, executables, timeoutInSeconds)
+    _pass_results["auto testing result"] = rc
+    if rc != 0:
+      regis.diagnostics.log_err(f"auto tests failed")
+      return rc
 
   return rc
