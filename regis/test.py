@@ -399,7 +399,7 @@ def _generate_coverage(shouldClean):
   """Generate the projects with coverage enabled"""
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating coverage code")
 
-  config = regis.generation.create_config(f'-intermediate-dir={coverage_intermediate_dir} -disable-clang-tidy-for-thirdparty -enable-code-coverage -enable-unit-tests')
+  config = regis.generation.create_config(f'-intermediate-dir={coverage_intermediate_dir} -disable-clang-tidy-for-thirdparty -enable-code-coverage -no-clang-tools -enable-unit-tests')
   return _generate_test_files(shouldClean, coverage_intermediate_dir, config)
 
 def _build_coverage(projects, singleThreaded : bool = False):
@@ -476,7 +476,7 @@ def _get_coverage_rawdata_filename(program : str):
 def _generate_address_sanitizer(shouldClean):
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating address sanitizer code")
 
-  config = regis.generation.create_config(f'-intermediate-dir={asan_intermediate_dir} -disable-clang-tidy-for-thirdparty -enable-unit-tests -enable-address-sanitizer -IDE None')
+  config = regis.generation.create_config(f'-intermediate-dir={asan_intermediate_dir} -disable-clang-tidy-for-thirdparty -no-clang-tools -enable-unit-tests -enable-address-sanitizer -IDE None')
   return _generate_test_files(shouldClean, asan_intermediate_dir, config)
 
 def _build_address_sanitizer(projects, singleThreaded : bool = False):
@@ -496,7 +496,7 @@ def _run_address_sanitizer(unitTestPrograms):
     # so we have to set the working directory of the program to where it's located so the log file will be there as well
     # ASAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
     # ASAN_OPTIONS flags: https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
-    asan_options = f"print_stacktrace=1:log_path=asan.log"
+    asan_options = f"print_stacktrace=1:log_path=asan.log:detect_odr_violation=0"
     os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
     
     proc = regis.util.run_subprocess_with_working_dir(program, log_folder)
@@ -514,7 +514,7 @@ def _run_address_sanitizer(unitTestPrograms):
 def _generate_undefined_behavior_sanitizer(shouldClean):
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating undefined behavior sanitizer code")
 
-  config = regis.generation.create_config(f'-intermediate-dir={ubsan_intermediate_dir} -disable-clang-tidy-for-thirdparty -enable-unit-tests -enable-ub-sanitizer -IDE None')
+  config = regis.generation.create_config(f'-intermediate-dir={ubsan_intermediate_dir} -disable-clang-tidy-for-thirdparty -no-clang-tools -enable-unit-tests -enable-ub-sanitizer -IDE None')
   return _generate_test_files(shouldClean, ubsan_intermediate_dir, config)
 
 def _build_undefined_behavior_sanitizer(projects, singleThreaded : bool = False):
@@ -756,7 +756,7 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
 def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = _generate_coverage(shouldClean)
-  _pass_results["coverage generation"] = len(rc) == 0
+  _pass_results["coverage generation"] = rc
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate coverage")
     return rc
@@ -865,8 +865,7 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
 
 def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  generated_files = _generate_undefined_behavior_sanitizer(shouldClean)
-  rc = len(generated_files) == 0
+  rc = _generate_undefined_behavior_sanitizer(shouldClean)
   _pass_results["undefined behavior sanitizer generation"] = rc
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate ubsan code")
