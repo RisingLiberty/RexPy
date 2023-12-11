@@ -226,6 +226,17 @@ def _generate_clang_tidy(shouldClean : bool):
   config = regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None')
   return _generate_test_files(shouldClean, auto_test_intermediate_dir, config)
 
+def _find_files(folder, predicate):
+  found_files : list[str] = []
+
+  for root, dirs, files in os.walk(folder):
+    for file in files:
+      if predicate(file):
+        path = os.path.join(root, file)
+        found_files.append(path)      
+  
+  return found_files
+
 def _run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, shouldFix : bool = False):
   """Run clang-tidy on the codebase"""
   rc = [0]
@@ -589,20 +600,8 @@ def _build_auto_tests(configs, compilers, projects, singleThreaded : bool = Fals
   task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
   return _build_files(configs, compilers, auto_test_intermediate_dir, projects, singleThreaded)
 
-def _find_tests_file(project : str):
-  # find the project file of the project
-  full_intermediate_dir = _create_full_intermediate_dir(auto_test_intermediate_dir)  
-  project_files = _find_files(full_intermediate_dir, lambda file: Path(file).stem.lower() == project.lower())
-
-  if not project_files:
-    return None
-  
-  if len(project_files) > 1:
-    return None
-
-  json_blob = regis.rex_json.load_file(project_files[0])
-  project_root = json_blob['root']
-
+def _find_tests_file(projectSettings : dict):
+  project_root = projectSettings["Root"]
   test_file_path = os.path.join(project_root, "tests.json")
 
   if not os.path.exists(test_file_path):
@@ -657,17 +656,6 @@ def _process_tests_file(file, programs, timeoutInSeconds):
       results[program] = rc
 
   return results
-
-def _find_files(folder, predicate):
-  found_files : list[str] = []
-
-  for root, dirs, files in os.walk(folder):
-    for file in files:
-      if predicate(file):
-        path = os.path.join(root, file)
-        found_files.append(path)      
-  
-  return found_files
 
 def _run_auto_tests(testFile, programs, timeoutInSeconds):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
@@ -754,8 +742,8 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
       continue
 
     project_settings = unit_test_projects[project]
-    executables = project_settings['target_paths']
-    with regis.util.temp_cwd(project_settings['working_dir']):
+    executables = project_settings['TargetPaths']
+    with regis.util.temp_cwd(project_settings['WorkingDir']):
       rc |= _run_unit_tests(executables)
     _pass_results[f"unit tests result - {project}"] = rc
 
@@ -799,7 +787,7 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
       continue
 
     project_settings = unit_test_projects[project]
-    executables = project_settings['target_paths']
+    executables = project_settings['TargetPaths']
 
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
     rawdata_files = _run_coverage(executables)
@@ -808,7 +796,7 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
     indexdata_files = _index_rawdata_files(rawdata_files)
     
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['working_dir']):
+    with regis.util.temp_cwd(project_settings['WorkingDir']):
       res = _create_coverage_reports(executables, indexdata_files)
     _pass_results[f"coverage report creation - {project}"] = res
     rc |= res
@@ -861,10 +849,10 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
       continue
 
     project_settings = unit_test_projects[project]
-    executables = project_settings['target_paths']
+    executables = project_settings['TargetPaths']
 
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['working_dir']):
+    with regis.util.temp_cwd(project_settings['WorkingDir']):
       res = _run_address_sanitizer(executables)
     _pass_results[f"address sanitizer result - {project}"] = res
     rc |= res
@@ -910,10 +898,10 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
       continue
 
     project_settings = unit_test_projects[project]
-    executables = project_settings['target_paths']
+    executables = project_settings['TargetPaths']
 
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['working_dir']):
+    with regis.util.temp_cwd(project_settings['WorkingDir']):
       res = _run_undefined_behavior_sanitizer(executables)
     _pass_results[f"undefined behavior sanitizer result - {project}"] = res
     rc |= res
@@ -959,10 +947,10 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
       continue
 
     project_settings = fuzzy_test_projects[project]
-    executables = project_settings['target_paths']
+    executables = project_settings['TargetPaths']
 
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['working_dir']):
+    with regis.util.temp_cwd(project_settings['WorkingDir']):
       res = _run_fuzzy_testing(executables)
     _pass_results[f"fuzzy testing result - {project}"] = res
     rc |= res
@@ -1006,10 +994,10 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
   
   for project in projects:
     project_settings = auto_test_projects[project]
-    executables = project_settings['target_paths']
-    test_file = _find_tests_file(project)
+    executables = project_settings['TargetPaths']
+    test_file = _find_tests_file(project_settings)
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['working_dir']):
+    with regis.util.temp_cwd(project_settings['WorkingDir']):
       res = _run_auto_tests(test_file, executables, timeoutInSeconds)
     _pass_results[f"auto testing result - {project}"] = res
     rc |= res
