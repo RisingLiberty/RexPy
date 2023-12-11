@@ -180,3 +180,30 @@ def find_all_files_in_folder(dir, toFindRegex):
 def remove_folders_recursive(dir : str):
   if os.path.exists(dir):
     shutil.rmtree(dir)
+
+def temp_cwd(newdir : str):
+	"""Create a scoped working directory. 
+		
+		Example usage:
+
+		with R.temp_cwd('c:\\p4') as d:
+			# cwd is now set to c:\\p4
+			t = os.path.join('data.txt')
+			with open(t, 'wb') as f:
+				f.write(data)
+			shutil.move(t, somewhere)
+		--> cwd is reset to what it was before it entered scope
+	"""
+	class temp_cwd_(object):
+		def __init__(self, newdir):
+					self.ndir = newdir
+					self.odir = os.getcwd()
+
+		def __enter__(self):
+			os.chdir(self.ndir)
+			return self.ndir
+		
+		def __exit__(self, extype, exvalue, tb):
+			os.chdir(self.odir)
+
+	return temp_cwd_(newdir)
