@@ -26,6 +26,7 @@ import regis.dir_watcher
 
 from pathlib import Path
 from datetime import datetime
+from requests.structures import CaseInsensitiveDict
 
 root_path = regis.util.find_root()
 tool_paths_dict = regis.required_tools.tool_paths_dict
@@ -90,7 +91,7 @@ def _default_output_callback(pid, output, isStdErr, filterLines):
 
 def _generate_include_what_you_use(shouldClean : bool):
     config = regis.generation.create_config(f'-intermediate-dir={iwyu_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None')
-    return _generate_test_files(shouldClean, auto_test_intermediate_dir, config)
+    return _generate_test_files(shouldClean, iwyu_intermediate_dir, config)
 
 def _run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
   """Run include what you use on the codebase"""
@@ -357,7 +358,7 @@ def _generate_unit_tests(shouldClean):
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating unit test projects")
 
   # Generate the unit test projects and return what's generated
-  config = regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -disable-clang-tidy-for-thirdparty -no-clang-tools -enable-unit-tests')
+  config = regis.generation.create_config(f'-intermediate-dir={unit_tests_intermediate_dir} -disable-clang-tidy-for-thirdparty -no-clang-tools -enable-unit-tests')
   return _generate_test_files(shouldClean, unit_tests_intermediate_dir, config)
 
 def _build_unit_tests(projects, singleThreaded : bool = False):
@@ -720,27 +721,44 @@ def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded
 
 def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  generated_files = _generate_unit_tests(shouldClean)
-  rc = len(generated_files) == 0
+  rc = _generate_unit_tests(shouldClean)
   _pass_results["unit tests generation"] = rc
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate tests")
     return rc
 
+  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  if not os.path.exists(test_projects_path):
+    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+    return rc | 1
+
+  # if no projects are specified, we run on all of them
+  test_projects = regis.rex_json.load_file(test_projects_path)
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+
+  if not projects:
+    projects = list(unit_test_projects.keys())
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  with regis.dir_watcher.DirWatcher(_create_full_intermediate_dir(clang_tidy_intermediate_dir), True) as dir_watcher:
-    rc |= _build_unit_tests(projects, singleThreaded)
+  rc |= _build_unit_tests(projects, singleThreaded)
 
   _pass_results["unit tests building"] = rc
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build tests")
     return rc
 
-  executables = dir_watcher.filter_created_or_modified_files(lambda dir: dir.endswith('.exe'))
-
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _run_unit_tests(executables)
-  _pass_results["unit tests result"] = rc
+  for project in projects:
+    if project not in unit_test_projects:
+      regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
+      continue
+
+    project_settings = unit_test_projects[project]
+    executables = project_settings['target_paths']
+    with regis.util.temp_cwd(project_settings['working_dir']):
+      rc |= _run_unit_tests(executables)
+    _pass_results[f"unit tests result - {project}"] = rc
+
   if rc != 0:
     regis.diagnostics.log_err(f"unit tests failed")
     return rc
@@ -755,6 +773,18 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
     regis.diagnostics.log_err(f"failed to generate coverage")
     return rc
 
+  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  if not os.path.exists(test_projects_path):
+    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+    return rc | 1
+
+  # if no projects are specified, we run on all of them
+  test_projects = regis.rex_json.load_file(test_projects_path)
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+
+  if not projects:
+    projects = list(unit_test_projects.keys())
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = _build_coverage(projects, singleThreaded)
   _pass_results["coverage building"] = rc
@@ -763,24 +793,34 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
     regis.diagnostics.log_err(f"failed to build coverage")
     return rc
 
-  executables = _find_files(_create_full_intermediate_dir(coverage_intermediate_dir), lambda file: file.endswith('.exe'))
+  for project in projects:
+    if project not in unit_test_projects:
+      regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
+      continue
 
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rawdata_files = _run_coverage(executables)
-  
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  indexdata_files = _index_rawdata_files(rawdata_files)
-  
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _create_coverage_reports(executables, indexdata_files)
-  _pass_results["coverage report creation"] = rc
-  if rc != 0:
-    regis.diagnostics.log_err(f"failed to create coverage reports")
-    return rc
+    project_settings = unit_test_projects[project]
+    executables = project_settings['target_paths']
 
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _parse_coverage_reports(indexdata_files)
-  _pass_results["coverage report result"] = rc
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    rawdata_files = _run_coverage(executables)
+    
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    indexdata_files = _index_rawdata_files(rawdata_files)
+    
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    with regis.util.temp_cwd(project_settings['working_dir']):
+      res = _create_coverage_reports(executables, indexdata_files)
+    _pass_results[f"coverage report creation - {project}"] = res
+    rc |= res
+    if res != 0:
+      regis.diagnostics.log_err(f"failed to create coverage reports")
+      continue
+
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    res |= _parse_coverage_reports(indexdata_files)
+    _pass_results[f"coverage report result - {project}"] = res
+    rc |= res
+
   if rc != 0:
     regis.diagnostics.log_err(f"Not all the code was covered")
     return rc
@@ -795,6 +835,18 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
     regis.diagnostics.log_err(f"failed to generate asan code")
     return rc
 
+  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  if not os.path.exists(test_projects_path):
+    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+    return rc | 1
+
+  # if no projects are specified, we run on all of them
+  test_projects = regis.rex_json.load_file(test_projects_path)
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+
+  if not projects:
+    projects = list(unit_test_projects.keys())
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _build_address_sanitizer(projects, singleThreaded)
   _pass_results["address sanitizer building"] = rc
@@ -803,16 +855,26 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
     regis.diagnostics.log_err(f"failed to build asan code")
     return rc
   
-  executables = _find_files(_create_full_intermediate_dir(asan_intermediate_dir), lambda file: file.endswith('.exe'))
+  for project in projects:
+    if project not in unit_test_projects:
+      regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
+      continue
 
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _run_address_sanitizer(executables)
-  _pass_results["address sanitizer result"] = rc
+    project_settings = unit_test_projects[project]
+    executables = project_settings['target_paths']
+
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    with regis.util.temp_cwd(project_settings['working_dir']):
+      res = _run_address_sanitizer(executables)
+    _pass_results[f"address sanitizer result - {project}"] = res
+    rc |= res
+
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with asan")
     return rc
 
   return rc
+
 def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   generated_files = _generate_undefined_behavior_sanitizer(shouldClean)
@@ -822,20 +884,40 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
     regis.diagnostics.log_err(f"failed to generate ubsan code")
     return rc
   
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
-    rc |= _build_undefined_behavior_sanitizer(projects, singleThreaded)
+  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  if not os.path.exists(test_projects_path):
+    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+    return rc | 1
 
+  # if no projects are specified, we run on all of them
+  test_projects = regis.rex_json.load_file(test_projects_path)
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+
+  if not projects:
+    projects = list(unit_test_projects.keys())
+
+  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+  rc |= _build_undefined_behavior_sanitizer(projects, singleThreaded)
   _pass_results["undefined behavior sanitizer building"] = rc
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build ubsan code")
     return rc
   
-  executables = _find_files(_create_full_intermediate_dir(ubsan_intermediate_dir), lambda file: file.endswith('.exe'))
+  for project in projects:
+    if project not in unit_test_projects:
+      regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
+      continue
 
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _run_undefined_behavior_sanitizer(executables)
-  _pass_results["undefined behavior sanitizer result"] = rc
+    project_settings = unit_test_projects[project]
+    executables = project_settings['target_paths']
+
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    with regis.util.temp_cwd(project_settings['working_dir']):
+      res = _run_undefined_behavior_sanitizer(executables)
+    _pass_results[f"undefined behavior sanitizer result - {project}"] = res
+    rc |= res
+    
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with ubsan")
     return rc
@@ -850,21 +932,41 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
   if rc != 0:
     regis.diagnostics.log_err(f"failed to generate fuzzy code")
     return rc
-  
+
+  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  if not os.path.exists(test_projects_path):
+    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+    return rc | 1
+
+  # if no projects are specified, we run on all of them
+  test_projects = regis.rex_json.load_file(test_projects_path)
+  fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["FuzzyTest"])
+
+  if not projects:
+    projects = list(fuzzy_test_projects.keys())
+
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
-    rc |= _build_fuzzy_testing(projects, singleThreaded)
+  rc |= _build_fuzzy_testing(projects, singleThreaded)
 
   _pass_results["fuzzy testing building"] = rc
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build fuzzy code")
     return rc
 
-  executables = _find_files(_create_full_intermediate_dir(fuzzy_intermediate_dir), lambda file: file.endswith('.exe'))
+  for project in projects:
+    if project not in fuzzy_test_projects:
+      regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
+      continue
 
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _run_fuzzy_testing(executables)
-  _pass_results["fuzzy testing result"] = rc
+    project_settings = fuzzy_test_projects[project]
+    executables = project_settings['target_paths']
+
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    with regis.util.temp_cwd(project_settings['working_dir']):
+      res = _run_fuzzy_testing(executables)
+    _pass_results[f"fuzzy testing result - {project}"] = res
+    rc |= res
+
   if rc != 0:
     regis.diagnostics.log_err(f"invalid code found with fuzzy")
     return rc
@@ -882,23 +984,38 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
     regis.diagnostics.log_err(f"failed to generate auto test code")
     return rc
   
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  with regis.dir_watcher.DirWatcher('.', True) as dir_watcher:
-    rc |= _build_auto_tests(configs, compilers, projects, singleThreaded)
+  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  if not os.path.exists(test_projects_path):
+    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+    return rc | 1
 
+  # if no projects are specified, we run on all of them
+  test_projects = regis.rex_json.load_file(test_projects_path)
+  auto_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["AutoTest"])
+
+  if not projects:
+    projects = list(auto_test_projects.keys())
+
+  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+  rc |= _build_auto_tests(configs, compilers, projects, singleThreaded)
   _pass_results["auto testing building"] = rc
+
   if rc != 0:
     regis.diagnostics.log_err(f"failed to build auto test code")
     return rc
   
   for project in projects:
-    executables = _find_files(_create_full_intermediate_dir(auto_test_intermediate_dir), lambda file: file.endswith('.exe'))
+    project_settings = auto_test_projects[project]
+    executables = project_settings['target_paths']
     test_file = _find_tests_file(project)
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    rc |= _run_auto_tests(test_file, executables, timeoutInSeconds)
-    _pass_results["auto testing result"] = rc
-    if rc != 0:
-      regis.diagnostics.log_err(f"auto tests failed")
-      return rc
+    with regis.util.temp_cwd(project_settings['working_dir']):
+      res = _run_auto_tests(test_file, executables, timeoutInSeconds)
+    _pass_results[f"auto testing result - {project}"] = res
+    rc |= res
+
+  if rc != 0:
+    regis.diagnostics.log_err(f"auto tests failed")
+    return rc
 
   return rc
