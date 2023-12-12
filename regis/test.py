@@ -315,8 +315,7 @@ def _generate_test_files(shouldClean : bool, intermediateDir : str, config):
     regis.diagnostics.log_info(f"cleaning {full_intermediate_dir}..")
     regis.util.remove_folders_recursive(full_intermediate_dir)
 
-  settings_path = os.path.join(root_path, regis.util.settingsPathFromRoot)
-  return regis.generation.new_generation(settings_path, config)
+  return regis.generation.new_generation(settings, config)
 
 def _build_files(configs : list[str], compilers : list[str], intermediateDir : str, projectsToBuild : list[str] = "", singleThreaded : bool = False):
   """Build certain projects under a intermediate directory in certain configs using certain compilers
