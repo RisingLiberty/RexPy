@@ -724,8 +724,7 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
   test_projects = regis.rex_json.load_file(test_projects_path)
   unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
-  if not projects:
-    projects = list(unit_test_projects.keys())
+  projects = projects or list(unit_test_projects.keys())
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
@@ -774,8 +773,7 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
   test_projects = regis.rex_json.load_file(test_projects_path)
   unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
-  if not projects:
-    projects = list(unit_test_projects.keys())
+  projects = projects or list(unit_test_projects.keys())
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
@@ -840,8 +838,7 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
   test_projects = regis.rex_json.load_file(test_projects_path)
   unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
-  if not projects:
-    projects = list(unit_test_projects.keys())
+  projects = projects or list(unit_test_projects.keys())
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
@@ -892,8 +889,7 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
   test_projects = regis.rex_json.load_file(test_projects_path)
   unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
-  if not projects:
-    projects = list(unit_test_projects.keys())
+  projects = projects or list(unit_test_projects.keys())
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
@@ -945,8 +941,7 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
   test_projects = regis.rex_json.load_file(test_projects_path)
   fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("FuzzyTest"))
 
-  if not projects:
-    projects = list(fuzzy_test_projects.keys())
+  projects = projects or list(fuzzy_test_projects.keys())
 
   if not projects:
     regis.diagnostics.log_warn(f'No fuzzy test projects found. have you generated them?')
@@ -1000,8 +995,7 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
   test_projects = regis.rex_json.load_file(test_projects_path)
   auto_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("AutoTest"))
 
-  if not projects:
-    projects = list(auto_test_projects.keys())
+  projects = projects or list(auto_test_projects.keys())
 
   if not projects:
     regis.diagnostics.log_warn(f'No auto test projects found. have you generated them?')
