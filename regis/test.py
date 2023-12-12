@@ -722,10 +722,14 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
   if not projects:
     projects = list(unit_test_projects.keys())
+
+  if not projects:
+    regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _build_unit_tests(projects, singleThreaded)
@@ -768,10 +772,14 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
   if not projects:
     projects = list(unit_test_projects.keys())
+
+  if not projects:
+    regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = _build_coverage(projects, singleThreaded)
@@ -830,10 +838,14 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
   if not projects:
     projects = list(unit_test_projects.keys())
+
+  if not projects:
+    regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _build_address_sanitizer(projects, singleThreaded)
@@ -878,10 +890,14 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["UnitTest"])
+  unit_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("UnitTest"))
 
   if not projects:
     projects = list(unit_test_projects.keys())
+
+  if not projects:
+    regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _build_undefined_behavior_sanitizer(projects, singleThreaded)
@@ -927,10 +943,14 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["FuzzyTest"])
+  fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("FuzzyTest"))
 
   if not projects:
     projects = list(fuzzy_test_projects.keys())
+
+  if not projects:
+    regis.diagnostics.log_warn(f'No fuzzy test projects found. have you generated them?')
+    return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _build_fuzzy_testing(projects, singleThreaded)
@@ -978,10 +998,14 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  auto_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"]["AutoTest"])
+  auto_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("AutoTest"))
 
   if not projects:
     projects = list(auto_test_projects.keys())
+
+  if not projects:
+    regis.diagnostics.log_warn(f'No auto test projects found. have you generated them?')
+    return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc |= _build_auto_tests(configs, compilers, projects, singleThreaded)
