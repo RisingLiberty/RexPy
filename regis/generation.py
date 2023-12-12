@@ -66,12 +66,17 @@ def _save_config_file(settings : dict, config : dict):
   if not os.path.exists(config_dir):
     os.mkdir(config_dir)
 
-  config_path = os.path.join(config_dir, 'config.json')
+  config_path = os.path.join(config_dir, 'generation_config.json')
 
   if config:
     regis.rex_json.save_file(config_path, config)
 
   return config_path.replace('\\', '/')
+
+def _load_config_file():
+  config_dir = os.path.join(os.path.join(root, settings['intermediate_folder'], settings['build_folder']))
+  config_path = os.path.join(config_dir, 'generation_config.json')
+  return regis.rex_json.load_file(config_path)
 
 def _make_optional_arg(arg : str):
   return f'-{arg}'
@@ -97,7 +102,7 @@ def _load_default_config():
 def add_config_arguments_to_parser(parser):
   _add_config_arguments(parser, _load_default_config())
 
-def create_config(args):
+def create_config(args, useDefault = True):
   """Create a config dictionary based on the arguments passed in."""
 
   if type(args) == str:
@@ -105,8 +110,8 @@ def create_config(args):
     add_config_arguments_to_parser(parser)
     args = parser.parse_args(shlex.split(args))
 
-  default_config : dict = regis.rex_json.load_file(os.path.join(root, "_build", "sharpmake", "data", "default_config.json"))
-  config : dict = copy.deepcopy(default_config)
+  config_input = _load_default_config() if useDefault else _load_config_file()
+  config : dict = copy.deepcopy(config_input)
   for arg in vars(args):
     arg_name = arg
     arg_name = arg_name.replace('_', '-') # python converts all hyphens into underscores so we need to convert them back
@@ -117,7 +122,7 @@ def create_config(args):
 
   return config
 
-def new_generation(settingsPath : str, config : dict, sharpmakeArgs : list[str] = []):
+def new_generation(settings : dict, config : dict, sharpmakeArgs : list[str] = []):
   """
   performs a new generation using the sharpmake files found by searching the current directory recursively.\n
   '/diagnostics' is always added as a sharpmake arguments.\n
@@ -125,7 +130,6 @@ def new_generation(settingsPath : str, config : dict, sharpmakeArgs : list[str] 
   """
 
   # save the config file to disk
-  settings = regis.rex_json.load_file(settingsPath)
   config_path = _save_config_file(settings, config)
 
   # scan recursively to find all the sharpmake files
