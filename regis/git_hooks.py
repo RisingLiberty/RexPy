@@ -10,7 +10,7 @@ def __install(hooksPath):
         return
     
     git_path = os.path.join(root_path, ".git")
-    if not os.path.exist(git_path):
+    if not os.path.exists(git_path):
         return
     
     hooks = os.listdir(hooksPath)
