@@ -728,6 +728,7 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    _pass_results["unit tests - nothing to do"] = rc
     return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -777,6 +778,7 @@ def test_code_coverage(projects, shouldClean : bool = True, singleThreaded : boo
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    _pass_results["code coverage - nothing to do"] = rc
     return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -842,6 +844,7 @@ def test_asan(projects, shouldClean : bool = True, singleThreaded : bool = False
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    _pass_results["address sanitizer - nothing to do"] = rc
     return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -893,6 +896,7 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
 
   if not projects:
     regis.diagnostics.log_warn(f'No unit test projects found. have you generated them?')
+    _pass_results["undefined behavior sanitizer - nothing to do"] = rc
     return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -945,6 +949,7 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
 
   if not projects:
     regis.diagnostics.log_warn(f'No fuzzy test projects found. have you generated them?')
+    _pass_results["fuzzy testing - nothing to do"] = rc
     return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
@@ -999,6 +1004,7 @@ def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldC
 
   if not projects:
     regis.diagnostics.log_warn(f'No auto test projects found. have you generated them?')
+    _pass_results["auto testing - nothing to do"] = rc
     return rc
 
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
