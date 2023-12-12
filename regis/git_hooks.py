@@ -9,11 +9,15 @@ def __install(hooksPath):
     if not os.path.exists(hooksPath):
         return
     
+    git_path = os.path.join(root_path, ".git")
+    if not os.path.exist(git_path):
+        return
+    
     hooks = os.listdir(hooksPath)
 
     for hook in hooks:
         src = os.path.join(hooksPath, hook)
-        dst = os.path.join(root_path, ".git", "hooks", hook)
+        dst = os.path.join(git_path, "hooks", hook)
         shutil.copy(src, dst)
 
 def run(hooksPath):
