@@ -549,14 +549,14 @@ def _run_undefined_behavior_sanitizer(unitTestPrograms):
 def _generate_fuzzy_testing(shouldClean):
   task_print = regis.task_raii_printing.TaskRaiiPrint("generating fuzzy testing code")
 
-  config = regis.generation.create_config(f"-enable-fuzzy-testing -intermediate-dir={fuzzy_intermediate_dir} -IDE None")
+  config = regis.generation.create_config(f"-enable-fuzzy-testing -no-clang-tools -intermediate-dir={fuzzy_intermediate_dir} -IDE None")
   return _generate_test_files(shouldClean, fuzzy_intermediate_dir, config)
 
 def _build_fuzzy_testing(projects, singleThreaded : bool = False):
   task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
   return _build_files(["fuzzy"], ["clang"], fuzzy_intermediate_dir, projects, singleThreaded)
 
-def _run_fuzzy_testing(fuzzyPrograms):
+def _run_fuzzy_testing(fuzzyPrograms, numRuns):
   task_print = regis.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
   
   rc = 0
@@ -574,8 +574,8 @@ def _run_fuzzy_testing(fuzzyPrograms):
     ubsan_options = f"print_stacktrace=1:log_path=fuzzy.log"
     os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
     os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
-    num_runs = 10000 # we'll run 10'000 fuzzy tests, should be more than enough
-    proc = regis.util.run_subprocess_with_working_dir(f"{program} -runs={num_runs}", log_folder)
+    regis.diagnostics.log_info(f'running {program}')
+    proc = regis.util.run_subprocess_with_working_dir(f"{program} -runs={numRuns}", log_folder)
     new_rc = regis.util.wait_for_process(proc)
     log_file_path = os.path.join(log_folder, f"fuzzy.log.{proc.pid}")
     if new_rc != 0 or os.path.exists(log_file_path): # if there's a ubsan.log.pid created, the tool found issues
@@ -926,7 +926,7 @@ def test_ubsan(projects, shouldClean : bool = True, singleThreaded : bool = Fals
 
   return rc
 
-def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : bool = False):
+def test_fuzzy_testing(projects, numRuns, shouldClean : bool = True, singleThreaded : bool = False):
   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
   rc = _generate_fuzzy_testing(shouldClean)
   _pass_results["fuzzy testing generation"] = rc
@@ -942,7 +942,7 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
 
   # if no projects are specified, we run on all of them
   test_projects = regis.rex_json.load_file(test_projects_path)
-  fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("FuzzyTest"))
+  fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("Fuzzy"))
 
   projects = projects or list(fuzzy_test_projects.keys())
 
@@ -969,7 +969,7 @@ def test_fuzzy_testing(projects, shouldClean : bool = True, singleThreaded : boo
 
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
     with regis.util.temp_cwd(project_settings['WorkingDir']):
-      res = _run_fuzzy_testing(executables)
+      res = _run_fuzzy_testing(executables, numRuns)
     _pass_results[f"fuzzy testing result - {project}"] = res
     rc |= res
 
