@@ -562,9 +562,6 @@ def _run_fuzzy_testing(fuzzyPrograms, numRuns):
   rc = 0
   for program in fuzzyPrograms:
     regis.diagnostics.log_info(f"running: {Path(program).name}")
-    log_folder_path = Path(program).parent
-    log_folder = log_folder_path.as_posix()
-    
     # for some reason, setting an absolute path for the log folder doesn't work
     # so we have to set the working directory of the program to where it's located so the log file will be there as well
     # Can't use both ASAN as well as UBSAN options, so we'll set the same for both and hope that works
@@ -575,9 +572,9 @@ def _run_fuzzy_testing(fuzzyPrograms, numRuns):
     os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
     os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
     regis.diagnostics.log_info(f'running {program}')
-    proc = regis.util.run_subprocess_with_working_dir(f"{program} -runs={numRuns}", log_folder)
+    proc = regis.util.run_subprocess(f"{program} corpus -runs={numRuns}")
     new_rc = regis.util.wait_for_process(proc)
-    log_file_path = os.path.join(log_folder, f"fuzzy.log.{proc.pid}")
+    log_file_path = f"fuzzy.log.{proc.pid}"
     if new_rc != 0 or os.path.exists(log_file_path): # if there's a ubsan.log.pid created, the tool found issues
       regis.diagnostics.log_err(f"fuzzy testing failed for {program}") # use full path to avoid ambiguity
       if os.path.exists(log_file_path):
