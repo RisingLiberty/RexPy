@@ -86,11 +86,17 @@ class NinjaProject:
   def _valid_args_check(self, compiler : str, config : str):
     if compiler not in self.json_blob['configs']:
       regis.diagnostics.log_err(f"no compiler '{compiler}' found for project '{self.project_name}'")
+      regis.diagnostics.log_err('Found compilers are')
+      for compiler_name in self.json_blob['configs']:
+        regis.diagnostics.log_err(f'- {compiler_name}')
       return 1
   
     if config not in self.json_blob['configs'][compiler]:
       regis.diagnostics.log_err(f"error in {self.filepath}")
       regis.diagnostics.log_err(f"no config '{config}' found in project '{self.project_name}' for compiler '{compiler}'")
+      regis.diagnostics.log_err('Found configs are')
+      for config_name in self.json_blob['configs'][compiler]:
+        regis.diagnostics.log_err(f'- {config_name}')
       return 1
     
     return 0
@@ -140,6 +146,9 @@ def _launch_new_build(sln_file : str, projectName : str, config : str, compiler 
   
   if projectName not in sln_jsob_blob:
     regis.diagnostics.log_err(f"project '{projectName}' was not found in solution, have you generated it?")
+    regis.diagnostics.log_err(f'found projects are')
+    for project in sln_jsob_blob:
+      regis.diagnostics.log_err(f'- {project}')
     return 1
   
   project_file_path = sln_jsob_blob[projectName]    
