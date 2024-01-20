@@ -192,7 +192,7 @@ def _look_for_sln_file_to_use(slnFile : str):
   
   return slnFile
 
-def _update_cleaned_projects(project : str, config : str, compiler : str, deletedPrograms : list[str]):
+def _update_cleaned_projects(project : str, config : str, compiler : str, deletedProgram : str):
   """Update the build projects file and remove all the projects that have been cleaned"""
   build_projects = regis.rex_json.load_file(build_projects_path)
 
@@ -213,13 +213,12 @@ def _update_cleaned_projects(project : str, config : str, compiler : str, delete
   
   build_programs : list[str] = build_projects[project][config][compiler]
 
-  for deleted_program in deletedPrograms:
-    if deleted_program in build_programs:
-      build_programs.remove(deleted_program)
+  if deletedProgram in build_programs:
+    build_programs.remove(deletedProgram)
 
   regis.rex_json.save_file(build_projects_path, build_projects)
 
-def _update_build_projects(project : str, config : str, compiler : str, paths : list[str]):
+def _update_build_projects(project : str, config : str, compiler : str, createdProgram : str):
   """Update the build projects file and update the paths to new build projects"""
   build_projects = regis.rex_json.load_file(build_projects_path)
 
@@ -234,7 +233,11 @@ def _update_build_projects(project : str, config : str, compiler : str, paths : 
   if config not in build_project:
     build_project[config] = {}
     
-  build_projects[project][config][compiler] = paths
+  build_config = build_project[config]
+  if compiler not in build_config:
+    build_config[compiler] = []
+
+  build_projects[project][config][compiler].append(createdProgram)
 
   regis.rex_json.save_file(build_projects_path, build_projects)
 
@@ -252,17 +255,17 @@ def new_build(project : str, config : str, compiler : str, shouldBuild : bool = 
   with regis.dir_watcher.DirWatcher(intermediate_path, bRecursive=True) as dir_watcher:
     res = _launch_new_build(slnFile, project, config, compiler, shouldBuild, shouldClean, buildDependencies)
 
-  programs_deleted = dir_watcher.filter_deleted_files(lambda path: path.endswith('.exe'))
-  programs_created = dir_watcher.filter_created_or_modified_files(lambda path: path.endswith('.exe'))
-
   if not os.path.exists(build_projects_path):
     regis.rex_json.save_file(build_projects_path, {})
 
   # it's possible nothing gets done because everything is up to date
   # in that case, we don't need to update anything
-  if len(programs_deleted) != 0 and len(programs_created) != 0:
-    _update_cleaned_projects(project, config, compiler, programs_deleted)
-    _update_build_projects(project, config, compiler, programs_created)
+  for op in dir_watcher.operations:
+    if regis.util.is_executable(op.filepath):
+      if (op.op == regis.dir_watcher.FileOperation.Deleted):
+        _update_cleaned_projects(project, config, compiler, op.filepath)
+      elif (op.op == regis.dir_watcher.FileOperation.Created):
+        _update_build_projects(project, config, compiler, op.filepath)
 
   return res
   
