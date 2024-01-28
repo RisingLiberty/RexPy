@@ -122,6 +122,7 @@ def __verify_external(externalPath, requiredTag):
         if version != requiredTag:
             regis.diagnostics.log_err(f"Invalid version data found, redownloading external: {external_name}")
             return False
+        regis.diagnostics.log_info(f"correct version")
         return True
 
     else:
