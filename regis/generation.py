@@ -59,14 +59,18 @@ def _scan_for_sharpmake_files(settings : dict):
 
   return sharpmakes_files
 
+def _config_path():
+  config_dir = os.path.join(os.path.join(root, settings['intermediate_folder'], settings['build_folder']))
+  config_path = os.path.join(config_dir, 'generation_config.json')
+  return config_path
+
 def _save_config_file(settings : dict, config : dict):
   """Create a new config file. This file will be passed over to sharpmake"""
 
-  config_dir = os.path.join(os.path.join(root, settings['intermediate_folder'], settings['build_folder']))
-  if not os.path.exists(config_dir):
+  config_path = _config_path()
+  config_dir = os.path.dirname(config_path)
+  if not os.path.exists(os.path.dirname(config_dir)):
     os.mkdir(config_dir)
-
-  config_path = os.path.join(config_dir, 'generation_config.json')
 
   if config:
     regis.rex_json.save_file(config_path, config)
@@ -99,8 +103,12 @@ def _add_config_arguments(parser : argparse.ArgumentParser, defaultConfig : dict
 def _load_default_config():
   return regis.rex_json.load_file(os.path.join(root, "_build", "sharpmake", "data", "default_config.json"))
 
-def add_config_arguments_to_parser(parser):
-  _add_config_arguments(parser, _load_default_config())
+def add_config_arguments_to_parser(parser, useDefaultConfig : bool):
+  if useDefaultConfig or not os.path.exists(_config_path()):
+    _add_config_arguments(parser, _load_default_config())
+  else:
+    _add_config_arguments(parser, _load_config_file())
+  
 
 def create_config(args, useDefault = True):
   """Create a config dictionary based on the arguments passed in."""
