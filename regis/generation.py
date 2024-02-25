@@ -100,7 +100,7 @@ def _add_config_arguments(parser : argparse.ArgumentParser, defaultConfig : dict
       desc += f' Options: {defaultConfig[setting]["Options"]}'
     
     if type(val) == bool:
-      parser.add_argument(arg, help=desc, action='store_true')
+      parser.add_argument(arg, help=desc, action='store_true', default=val)
     else:
       parser.add_argument(arg, help=desc, default=val)
 
