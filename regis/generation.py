@@ -117,9 +117,11 @@ def add_config_arguments_to_parser(parser, useDefaultConfig : bool):
 def create_config(args, useDefault = True):
   """Create a config dictionary based on the arguments passed in."""
 
+  regis.diagnostics.log_info(f'Creating config using: {args}')
+
   if type(args) == str:
     parser = argparse.ArgumentParser()
-    add_config_arguments_to_parser(parser)
+    add_config_arguments_to_parser(parser, useDefault)
     args = parser.parse_args(shlex.split(args))
 
   config_input = _load_default_config() if useDefault or not os.path.exists(_config_path()) else _load_config_file()
@@ -143,6 +145,7 @@ def new_generation(settings : dict, config : dict, sharpmakeArgs : list[str] = [
 
   # save the config file to disk
   config_path = _save_config_file(config)
+  regis.diagnostics.log_info(f'Saved generation config file to {config_path}')
 
   # scan recursively to find all the sharpmake files
   sharpmake_files = _scan_for_sharpmake_files(settings)

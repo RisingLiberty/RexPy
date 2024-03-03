@@ -1,4 +1,5 @@
 import os
+import threading
 import regis.required_tools
 import regis.rex_json
 import regis.util
@@ -127,6 +128,9 @@ class NinjaProject:
 
     return r
 
+  def compilers(self):
+    return self.json_blob['configs']
+
 def find_sln(directory):
   """Find the ninja solution in the specified directory"""
   dirs = os.listdir(directory)
@@ -140,20 +144,21 @@ def find_sln(directory):
     
   return res
 
-def _launch_new_build(sln_file : str, projectName : str, config : str, compiler : str, shouldBuild : bool, shouldClean : bool, buildDependencies = False):
-  """Load the solution, look for the project in the solution and build it"""
-  sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(sln_file))
+def _find_ninja_project_file(slnFile : str, projectName : str):
+  sln_jsob_blob = CaseInsensitiveDict(regis.rex_json.load_file(slnFile))
   
   if projectName not in sln_jsob_blob:
     regis.diagnostics.log_err(f"project '{projectName}' was not found in solution, have you generated it?")
     regis.diagnostics.log_err(f'found projects are')
     for project in sln_jsob_blob:
       regis.diagnostics.log_err(f'- {project}')
-    return 1
+    return None
   
   project_file_path = sln_jsob_blob[projectName]    
-  project = NinjaProject(project_file_path)
+  return NinjaProject(project_file_path)
 
+def _launch_new_build(project : NinjaProject, config : str, compiler : str, shouldBuild : bool, shouldClean : bool, buildDependencies = False):
+  """Load the solution, look for the project in the solution and build it"""
   compiler_lower = compiler.lower()
   config_lower = config.lower()
 
@@ -241,7 +246,7 @@ def _update_build_projects(project : str, config : str, compiler : str, createdP
 
   regis.rex_json.save_file(build_projects_path, build_projects)
 
-def new_build(project : str, config : str, compiler : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False):
+def new_build(projectName : str, config : str, compiler : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False):
   """This is the interface to the build pipeline.\n
   It'll launch a new build for the project using the config and compiler specified.\n
   It's possible to to negate building and only clean or to do a clean step before the build starts.\n
@@ -252,8 +257,9 @@ def new_build(project : str, config : str, compiler : str, shouldBuild : bool = 
     regis.diagnostics.log_err("unable to find solution, aborting..")
     return 1
   
+  project = _find_ninja_project_file(slnFile, projectName)
   with regis.dir_watcher.DirWatcher(intermediate_path, bRecursive=True) as dir_watcher:
-    res = _launch_new_build(slnFile, project, config, compiler, shouldBuild, shouldClean, buildDependencies)
+    res = _launch_new_build(project, config, compiler, shouldBuild, shouldClean, buildDependencies)
 
   if not os.path.exists(build_projects_path):
     regis.rex_json.save_file(build_projects_path, {})
@@ -269,3 +275,38 @@ def new_build(project : str, config : str, compiler : str, shouldBuild : bool = 
 
   return res
   
+def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False, singleThreaded : bool = True):
+  slnFile = _look_for_sln_file_to_use(slnFile)
+
+  if slnFile == "":
+    regis.diagnostics.log_err("unable to find solution, aborting..")
+    return 1
+  
+  project = _find_ninja_project_file(slnFile, projectName)
+  configs = project.compilers()
+
+  # This is the list that'll store the results of each build
+  result_arr = []
+  def _build_on_thread(prj, cfg, comp, result):
+    result.append(_launch_new_build(prj, cfg, comp, shouldBuild, shouldClean, buildDependencies))
+
+  threads : list[threading.Thread] = []
+  
+  # loop over the configs and compilers and create a build for each combination
+  for compiler in configs:
+    for config in configs[compiler]:
+      thread = threading.Thread(target=_build_on_thread, args=(project, config, compiler, result_arr))
+      thread.start()
+
+      # A dirty hack for singlethreaded mode
+      # we always spawn a thread but in single threaded mode, we join it immediately
+      if singleThreaded:
+        thread.join()
+      else:
+        threads.append(thread)
+
+  # in multi threaded mode, we join threads after all of them have spawned
+  for thread in threads:
+    thread.join()
+
+  return result_arr.count(0) != len(result_arr)

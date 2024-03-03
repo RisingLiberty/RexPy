@@ -122,7 +122,8 @@ def __unmangle_function_names(logFilePath, profDataPath):
 
 def __generate_html_reports(unmangledLogFilePath):
   lcov_path = required_tools.tool_paths_dict["lcov_path"]
-  cmd = f"perl {lcov_path} {unmangledLogFilePath} -q -o {os.path.join(Path(unmangledLogFilePath).parent, htlm_report_folder)}"
+  perl_path = required_tools.tool_paths_dict['perl_path']
+  cmd = f"{perl_path} {lcov_path} {unmangledLogFilePath} -q -o {os.path.join(Path(unmangledLogFilePath).parent, htlm_report_folder)}"
   os.system(cmd)
 
 def create_lcov_report(programPath, profDataPath):
