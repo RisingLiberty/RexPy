@@ -229,12 +229,30 @@ class IncludeWhatYouUseJob():
     self.fix_includes = fixIncludes
     return
   
-  def generate(self):
+  def execute(self, singleThreaded : bool):
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    rc = self._generate()
+    _pass_results["include-what-you-use generate"] = rc
+    if rc != 0:
+      regis.diagnostics.log_err(f"include-what-you-use generation failed")
+      return rc
+
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    rc = self._run(singleThreaded)
+    _pass_results["include-what-you-use run"] = rc
+
+    if rc != 0:
+      regis.diagnostics.log_err(f"include-what-you-use pass failed")
+      return rc
+    
+    return rc
+  
+  def _generate(self):
     """Generate the projects to run include-what-you-use on"""
-    config = regis.generation.create_config(f'-intermediate-dir={iwyu_intermediate_dir} -disable-clang-tidy-for-thirdparty')
+    config = regis.generation.create_config(f'-intermediate-dir={iwyu_intermediate_dir} -enable-clang-tools -disable-clang-tidy-for-thirdparty')
     return _generate_test_files(self.should_clean, iwyu_intermediate_dir, config)
   
-  def run(self, singleThreaded : bool):
+  def _run(self, singleThreaded : bool):
     """Run include what you use on the codebase"""
     def _run(iwyuPath, compdb, outputPath, impPath, lock):
       """Run the actual include-what-you-use command and save the output into a log file"""
@@ -352,17 +370,35 @@ class IncludeWhatYouUseJob():
 
 class ClangTidyJob():
   """A job that runs clang-tidy over a project"""
-  def __init__(self, shouldClean : bool, autoFix : bool, filesRegex : str):
+  def __init__(self, shouldClean : bool, autoFix : bool, filterLines : bool, filesRegex : str):
     self.should_clean = shouldClean
     self.auto_fix = autoFix
+    self.filter_lines = filterLines
     self.files_regex = filesRegex
     return
   
-  def generate(self):
+  def execute(self, singleThreaded : bool):
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    rc = self._generate()
+    _pass_results["clang-tidy generation"] = rc
+    if rc != 0:
+      regis.diagnostics.log_err(f"clang-tidy pass failed")
+      return rc
+
+    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+    rc = self._run(self.filter_lines, singleThreaded)
+    _pass_results["clang-tidy run"] = rc
+    if rc != 0:
+      regis.diagnostics.log_err(f"clang-tidy pass failed")
+      return rc
+
+    return rc
+
+  def _generate(self):
     config = regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -enable-clang-tools -disable-clang-tidy-for-thirdparty')
     return _generate_test_files(self.should_clean, clang_tidy_intermediate_dir, config)
     
-  def run(self, filterLines : bool, singleThreaded : bool):
+  def _run(self, filterLines : bool, singleThreaded : bool):
     """Run clang-tidy on the codebase"""
     rc = [0]
     def _run(cmd : str, rc : int):
@@ -819,149 +855,9 @@ class FuzzyTestJob():
           if new_rc != 0:
             regis.diagnostics.log_err(f"fuzzy testing failed for {runnable.program}") # use full path to avoid ambiguity
 
-          # # for some reason, setting an absolute path for the log folder doesn't work
-          # # so we have to set the working directory of the program to where it's located so the log file will be there as well
-          # # Can't use both ASAN as well as UBSAN options, so we'll set the same for both and hope that works
-          # # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94328
-          # # https://stackoverflow.com/questions/60774638/logging-control-for-address-sanitizer-plus-undefined-behavior-sanitizer
-          # asan_options = f"print_stacktrace=1:log_path=fuzzy.log"
-          # ubsan_options = f"print_stacktrace=1:log_path=fuzzy.log"
-          # os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
-          # os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
-          # regis.diagnostics.log_info(f'running {program}')
-          # proc = regis.util.run_subprocess(f"{program} corpus -runs={numRuns}")
-          # new_rc = regis.util.wait_for_process(proc)
-          # log_file_path = f"fuzzy.log.{proc.pid}"
-          # if new_rc != 0 or os.path.exists(log_file_path): # if there's a ubsan.log.pid created, the tool found issues
-          #   regis.diagnostics.log_err(f"fuzzy testing failed for {program}") # use full path to avoid ambiguity
-          #   if os.path.exists(log_file_path):
-          #     regis.diagnostics.log_err(f"issues found while fuzzing!")
-          #     regis.diagnostics.log_err(f"for more info, please check: {log_file_path}")
-          #   new_rc = 1
           rc |= new_rc
 
         return rc
-
-def _generate_include_what_you_use(shouldClean : bool):
-    config = regis.generation.create_config(f'-intermediate-dir={iwyu_intermediate_dir} -disable-clang-tidy-for-thirdparty -IDE None')
-    return _generate_test_files(shouldClean, iwyu_intermediate_dir, config)
-
-def _run_include_what_you_use(fixIncludes = False, shouldClean : bool = True, singleThreaded : bool = False):
-  """Run include what you use on the codebase"""
-  def _run(iwyuPath, compdb, outputPath, impPath, lock):
-      """Run the actual include-what-you-use command and save the output into a log file"""
-      # create the command line to launch include-what-you-use
-      cmd = ""
-      cmd += f"py {iwyuPath} -v -p={compdb}"
-      cmd += f" -- -Xiwyu --quoted_includes_first"
-      
-      if impPath != "" and os.path.exists(impPath):
-        cmd += f" -Xiwyu --mapping_file={impPath}"
-
-      # run include-what-you-use and save the output into a file
-      output = subprocess.getoutput(cmd)
-      with open(outputPath, "w") as f:
-        f.write(output)
-      output_lines = output.split('\n')
-
-      # print the output using our color coding
-      # to detect if it's an error, warning or regular log
-      with lock:
-        for line in output_lines:
-          _symbolic_print(line)
-
-        # log to the user that output has been saved
-        regis.diagnostics.log_info(f"include what you use info saved to {outputPath}")
-    
-  task_print = regis.task_raii_printing.TaskRaiiPrint("running include-what-you-use")
-
-  # find all the compiler dbs.
-  # these act as input for include-what-you-use
-  intermediate_folder = os.path.join(root_path, settings["intermediate_folder"], settings["build_folder"], iwyu_intermediate_dir)
-  result = regis.util.find_all_files_in_folder(intermediate_folder, "compile_commands.json")
-    
-  threads : list[threading.Thread] = []
-  output_files_per_project : dict[str, list] = {}
-  lock = threading.Lock()
-
-  iwyu_path = tool_paths_dict["include_what_you_use_path"]
-  iwyu_tool_path = os.path.join(Path(iwyu_path).parent, "iwyu_tool.py")
-
-  # create the include-what-you-use jobs
-  for compiler_db in result:
-    compiler_db_folder = Path(compiler_db).parent
-    impPath = os.path.join(compiler_db_folder, "iwyu.imp")
-    output_path = os.path.join(compiler_db_folder, "iwyu_output.log")
-    project_name = _get_project_name_of_compdb(compiler_db_folder)
-
-    # if we haven't compiled this project yet, prep the dict for it
-    if project_name not in output_files_per_project:
-      output_files_per_project[project_name] = []
-
-    output_files_per_project[project_name].append(output_path)
-
-    thread = threading.Thread(target=_run, args=(iwyu_tool_path, compiler_db, output_path, impPath, lock))
-    thread.start()
-
-    # very simple way of splitting single threaded with multi threaded mode
-    # if we're single thread, we create a thread and immediately join it
-    # if we're using multi threaded mode, we join them after all of them have been created
-    if singleThreaded:
-      thread.join() 
-    else:
-      threads.append(thread)
-
-  # join all the threads after they've all been created
-  # this is basically a no op if we're running in single threaded mode
-  for thread in threads:
-    thread.join()
-
-  threads.clear()
-
-  # because different configs could require different symbols or includes
-  # we need to process all configs first, then process each output file for each config
-  # for a given project and only if an include is not needed in all configs
-  # take action and remove it or replace it with a forward declare
-  # this can't be multithreaded
-  if fixIncludes:
-    regis.diagnostics.log_info(f'Applying fixes..')
-
-  fix_includes_path = os.path.join(Path(iwyu_path).parent, "fix_includes.py")
-
-  # this is the actual run in trying to fix the includes
-  # however it can be faked when fixIncludes is false
-  # if so, it'll do a dry run without changing anything
-  # it'll still return a proper return code
-  # indicating if anything needs to be changed
-  rc = 0
-  for key in output_files_per_project.keys():
-    output_files = output_files_per_project[key]
-    lines = []
-    regis.diagnostics.log_info(f'processing: {key}')
-
-    # include-what-you-use uses the output path of iwyu to determine what needs to be fixed
-    # we merge all the outputs of all runs of iwyu on a project in different configs
-    # and pass that temporary file over to include what you use
-    for file in output_files:
-      f = open(file, "r")
-      lines.extend(f.readlines())
-
-    filename = f'{key}_tmp.iwyu'
-    filepath = os.path.join(intermediate_folder, filename)
-    f = open(filepath, "w")
-    f.writelines(lines)
-    f.close()
-
-    # create the fix includes command line
-    cmd = f"py {fix_includes_path} --noreorder --process_merged=\"{filepath}\" --nocomments --nosafe_headers"
-
-    if fixIncludes == False:
-      cmd += f" --dry_run"
-
-    # run the fix includes command line
-    rc |= os.system(f"{cmd}")  
-
-  return rc
 
 # the compdbPath directory contains all the files needed to configure clang tools
 # this includes the compiler database, clang tidy config files, clang format config files
@@ -1087,77 +983,6 @@ def _create_full_intermediate_dir(dir):
   """Create the absolute path for the test build directory"""
   return os.path.join(os.getcwd(), settings["intermediate_folder"], settings["build_folder"], dir)
 
-# fuzzy
-def _generate_fuzzy_testing(shouldClean : bool, enableAsan : bool, enableUbsan : bool):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("generating fuzzy testing code")
-
-  config_args = []
-  config_args.append(f'-intermediate-dir={fuzzy_intermediate_dir}')
-  config_args.append('-enable-fuzzy-testing')
-
-  if enableAsan:
-    config_args.append('-enable-address-sanitizer')
-
-  if enableUbsan:
-    config_args.append('-enable-ub-sanitizer')
-
-  config = regis.generation.create_config(' '.join(config_args))
-  return _generate_test_files(shouldClean, fuzzy_intermediate_dir, config)
-
-def _build_fuzzy_testing(projects, singleThreaded : bool = False):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("building fuzzy testing code")
-  return _build_files(["fuzzy"], ["clang"], fuzzy_intermediate_dir, projects, singleThreaded)
-
-def _run_fuzzy_testing(fuzzyPrograms, numRuns):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("running fuzzy tests")
-  
-  rc = 0
-  for program in fuzzyPrograms:
-    regis.diagnostics.log_info(f"running: {Path(program).name}")
-    # for some reason, setting an absolute path for the log folder doesn't work
-    # so we have to set the working directory of the program to where it's located so the log file will be there as well
-    # Can't use both ASAN as well as UBSAN options, so we'll set the same for both and hope that works
-    # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94328
-    # https://stackoverflow.com/questions/60774638/logging-control-for-address-sanitizer-plus-undefined-behavior-sanitizer
-    asan_options = f"print_stacktrace=1:log_path=fuzzy.log"
-    ubsan_options = f"print_stacktrace=1:log_path=fuzzy.log"
-    os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
-    os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
-    regis.diagnostics.log_info(f'running {program}')
-    proc = regis.util.run_subprocess(f"{program} corpus -runs={numRuns}")
-    new_rc = regis.util.wait_for_process(proc)
-    log_file_path = f"fuzzy.log.{proc.pid}"
-    if new_rc != 0 or os.path.exists(log_file_path): # if there's a ubsan.log.pid created, the tool found issues
-      regis.diagnostics.log_err(f"fuzzy testing failed for {program}") # use full path to avoid ambiguity
-      if os.path.exists(log_file_path):
-        regis.diagnostics.log_err(f"issues found while fuzzing!")
-        regis.diagnostics.log_err(f"for more info, please check: {log_file_path}")
-      new_rc = 1
-    rc |= new_rc
-
-  return rc
-
-# auto tests
-def _generate_auto_tests(shouldClean : bool, enableAsan : bool, enableUbsan : bool):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("generating auto tests")
-
-  config_args = []
-  config_args.append(f'-intermediate-dir={fuzzy_intermediate_dir}')
-  config_args.append('-enable-auto-tests')
-
-  if enableAsan:
-    config_args.append('-enable-address-sanitizer')
-
-  if enableUbsan:
-    config_args.append('-enable-ub-sanitizer')
-
-  config = regis.generation.create_config(' '.join(config_args))
-  return _generate_test_files(shouldClean, auto_test_intermediate_dir, config)
-
-def _build_auto_tests(configs, compilers, projects, singleThreaded : bool = False):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("building auto tests")
-  return _build_files(configs, compilers, auto_test_intermediate_dir, projects, singleThreaded)
-
 def _find_tests_file(projectSettings : dict):
   project_root = projectSettings["Root"]
   test_file_path = os.path.join(project_root, "tests.json")
@@ -1167,103 +992,14 @@ def _find_tests_file(projectSettings : dict):
 
   return test_file_path
 
-def _process_tests_file(file, programs, timeoutInSeconds):
-  json_blob = regis.rex_json.load_file(file)
-    
-  results = {}
-
-  for test in json_blob:
-    command_line = json_blob[test]["command_line"]
-
-    rc = 0
-    for program in programs:
-      regis.diagnostics.log_info(f"running: {Path(program).name}")
-      regis.diagnostics.log_info(f"with command line: {command_line}")
-      proc = regis.util.run_subprocess(f"{program} {command_line}")
-
-      # wait for program to finish on a different thread so we can terminate it on timeout
-      thread = threading.Thread(target=lambda: proc.wait())
-      thread.start()
-
-      # wait for timeout to trigger or until the program exits
-      now = time.time()
-      duration = 0
-      killed_process = False
-      max_seconds = timeoutInSeconds
-      while True:
-        duration = time.time() - now
-        if not thread.is_alive():
-          break
-        
-        if duration > max_seconds:
-          proc.terminate() 
-          killed_process = True
-          break
-
-      # makes sure that we get an error code even if the program crashed
-      proc.communicate()
-      new_rc = proc.returncode
-      
-      if new_rc != 0:
-        if killed_process:
-          regis.diagnostics.log_err(f"auto test timeout triggered for {program} after {max_seconds} seconds") # use full path to avoid ambiguity
-        else:
-          rc |= new_rc
-          regis.diagnostics.log_err(f"auto test failed for {program} with returncode {new_rc}") # use full path to avoid ambiguity
-
-      results[program] = rc
-
-  return results
-
-def _run_auto_tests(testFile, programs, timeoutInSeconds):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("running auto tests")
-  
-  results : list[dict] = []
-
-  results.append(_process_tests_file(testFile, programs, timeoutInSeconds))
-
-  for res in results:
-    values = list(res.values())
-    if (len(values) != values.count(0)):
-      return 1
-
-  return 0
-
 # public API
 def test_include_what_you_use(shouldClean : bool = True, singleThreaded : bool = False, shouldFix : bool = False):
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_include_what_you_use(shouldClean)
-  _pass_results["include-what-you-use generate"] = rc
-  if rc != 0:
-    regis.diagnostics.log_err(f"include-what-you-use generation failed")
-    return rc
-
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _run_include_what_you_use(shouldFix, shouldClean, singleThreaded)
-  _pass_results["include-what-you-use run"] = rc
-
-  if rc != 0:
-    regis.diagnostics.log_err(f"include-what-you-use pass failed")
-    return rc
+  iwyu_job = IncludeWhatYouUseJob(shouldClean, shouldFix)
+  return iwyu_job.execute(singleThreaded)
   
-  return rc
-
 def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, autoFix : bool = False):
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_clang_tidy(shouldClean)
-  _pass_results["clang-tidy generation"] = rc
-  if rc != 0:
-    regis.diagnostics.log_err(f"clang-tidy pass failed")
-    return rc
-
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _run_clang_tidy(filesRegex, shouldClean, singleThreaded, filterLines, autoFix)
-  _pass_results["clang-tidy run"] = rc
-  if rc != 0:
-    regis.diagnostics.log_err(f"clang-tidy pass failed")
-    return rc
-
-  return rc
+  clang_tidy_job = ClangTidyJob(shouldClean, autoFix, filterLines, filesRegex)
+  return clang_tidy_job.execute(singleThreaded)
 
 def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCoverage : bool = False):
   unit_test_job = UnitTestJob(projects, shouldClean, enableAsan, enableUbsan, enableCoverage)
@@ -1271,60 +1007,8 @@ def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool =
 
 def test_fuzzy_testing(projects, numRuns, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCodeCoverage : bool = False):
   fuzzy_test_job = FuzzyTestJob(projects, numRuns, shouldClean, enableAsan, enableUbsan, enableCodeCoverage)
-  fuzzy_test_job.execute(singleThreaded)
+  return fuzzy_test_job.execute(singleThreaded)
   
-  # regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  # rc = _generate_fuzzy_testing(shouldClean, enableAsan, enableUbsan)
-  # _pass_results["fuzzy testing generation"] = rc
-
-  # if rc != 0:
-  #   regis.diagnostics.log_err(f"failed to generate fuzzy code")
-  #   return rc
-
-  # test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
-  # if not os.path.exists(test_projects_path):
-  #   regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
-  #   return rc | 1
-
-  # # if no projects are specified, we run on all of them
-  # test_projects = regis.rex_json.load_file(test_projects_path)
-  # fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("Fuzzy"))
-
-  # projects = projects or list(fuzzy_test_projects.keys())
-
-  # if not projects:
-  #   regis.diagnostics.log_warn(f'No fuzzy test projects found. have you generated them?')
-  #   _pass_results["fuzzy testing - nothing to do"] = rc
-  #   return rc
-
-  # regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  # rc |= _build_fuzzy_testing(projects, singleThreaded)
-
-  # _pass_results["fuzzy testing building"] = rc
-  # if rc != 0:
-  #   regis.diagnostics.log_err(f"failed to build fuzzy code")
-  #   return rc
-
-  # for project in projects:
-  #   if project not in fuzzy_test_projects:
-  #     regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
-  #     continue
-
-  #   project_settings = fuzzy_test_projects[project]
-  #   executables = project_settings['TargetPaths']
-
-  #   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  #   with regis.util.temp_cwd(project_settings['WorkingDir']):
-  #     res = _run_fuzzy_testing(executables, numRuns)
-  #   _pass_results[f"fuzzy testing result - {project}"] = res
-  #   rc |= res
-
-  # if rc != 0:
-  #   regis.diagnostics.log_err(f"invalid code found with fuzzy")
-  #   return rc
-
-  # return rc
-
 def run_auto_tests(projects, timeoutInSeconds : int, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCodeCoverage : bool = False):
   auto_test_job = AutoTestJob(projects, timeoutInSeconds, shouldClean, enableAsan, enableUbsan, enableCodeCoverage)
-  auto_test_job.execute(singleThreaded)
+  return auto_test_job.execute(singleThreaded)

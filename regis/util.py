@@ -168,8 +168,8 @@ def run_subprocess_with_callback(command, callback, filterLines):
   return proc
 
 def wait_for_process(process):
-  streamdata = process.communicate()[0]
-  return process.returncode  
+  process.wait()
+  return process.returncode
 
 def is_executable(path):
   if is_windows():
