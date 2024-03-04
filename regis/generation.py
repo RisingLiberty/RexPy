@@ -168,6 +168,6 @@ def new_generation(settings : dict, config : dict, sharpmakeArgs : list[str] = [
   sharpmake_sources = sharpmake_sources.replace('\\', '/')
 
   # run the actual executable
-  proc = regis.util.run_subprocess(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\") {' '.join(sharpmakeArgs)}")
+  proc = regis.util.run_subprocess_from_command(f"{sharpmake_path} /sources({sharpmake_sources}) /diagnostics /configFile(\"{config_path}\") {' '.join(sharpmakeArgs)}")
   regis.util.wait_for_process(proc)
   return proc.returncode

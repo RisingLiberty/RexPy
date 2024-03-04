@@ -6,28 +6,45 @@ import subprocess
 import re
 import diagnostics
 import shutil
+import regis.util
+import regis.rex_json
 
-htlm_report_folder = "lcov"
+html_report_folder = "lcov"
+root_path = regis.util.find_root()
+settings = regis.rex_json.load_file(os.path.join(root_path, regis.util.settingsPathFromRoot))
 
 def create_index_rawdata(rawdataPath):
-  folder = Path(rawdataPath).parent
-  output_path = os.path.join(folder, f"{Path(rawdataPath).stem}.profdata")
+  log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+  stem = Path(rawdataPath).stem
+  output_folder = os.path.join(log_folder, stem)
+  if not os.path.isdir(output_folder):
+    os.makedirs(output_folder)
+    
+  output_path = os.path.join(output_folder, f"{Path(rawdataPath).stem}.profdata")
   llvm_profdata_path = required_tools.tool_paths_dict["llvm_profdata_path"]
   os.system(f"{llvm_profdata_path} merge -sparse {rawdataPath} -o {output_path}")
 
   return output_path
 
 def get_line_oriented_report_filename(profDataPath):
-  return os.path.join(Path(profDataPath).parent, f"{Path(profDataPath).stem}_line.html")
+  log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+  stem = Path(profDataPath).stem
+  return os.path.join(log_folder, stem, f"{Path(profDataPath).stem}_line.html")
 
 def get_file_level_summary_filename(profDataPath):
-  return os.path.join(Path(profDataPath).parent, f"{Path(profDataPath).stem}_file.report")
+  log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+  stem = Path(profDataPath).stem
+  return os.path.join(log_folder, stem, f"{Path(profDataPath).stem}_file.report")
 
 def get_lcov_filename(profDataPath):
-  return os.path.join(Path(profDataPath).parent, f"{Path(profDataPath).stem}_lcov.info")
+  log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+  stem = Path(profDataPath).stem
+  return os.path.join(log_folder, stem, f"{Path(profDataPath).stem}_lcov.info")
 
 def get_lcov_unmangled_filename(profDataPath):
-  return os.path.join(Path(profDataPath).parent, f"{Path(profDataPath).stem}_lcov_unmangled.info")
+  log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+  stem = Path(profDataPath).stem
+  return os.path.join(log_folder, stem, f"{Path(profDataPath).stem}_lcov_unmangled.info")
 
 def create_line_oriented_report(programPath, profDataPath):
   llvm_cov_path = required_tools.tool_paths_dict["llvm_cov_path"]
@@ -123,12 +140,12 @@ def __unmangle_function_names(logFilePath, profDataPath):
 def __generate_html_reports(unmangledLogFilePath):
   lcov_path = required_tools.tool_paths_dict["lcov_path"]
   perl_path = required_tools.tool_paths_dict['perl_path']
-  cmd = f"{perl_path} {lcov_path} {unmangledLogFilePath} -q -o {os.path.join(Path(unmangledLogFilePath).parent, htlm_report_folder)}"
+  cmd = f"{perl_path} {lcov_path} {unmangledLogFilePath} -q -o {os.path.join(Path(unmangledLogFilePath).parent, html_report_folder)}"
   os.system(cmd)
 
 def create_lcov_report(programPath, profDataPath):
-  if os.path.exists(htlm_report_folder):
-    shutil.rmtree(htlm_report_folder)
+  if os.path.exists(html_report_folder):
+    shutil.rmtree(html_report_folder)
   
   log_file_path = __create_mangled_lcov_info(programPath, profDataPath)
   unmangled_log_file_path = __unmangle_function_names(log_file_path, profDataPath)

@@ -67,7 +67,7 @@ def _symbolic_print(line, filterLines : bool = False):
     regis.diagnostics.log_no_color(line)
 
 def _default_output_callback(pid, output, isStdErr, filterLines):
-  logs_dir = os.path.join(settings["intermediate_folder"], "logs")
+  logs_dir = os.path.join(settings["intermediate_folder"], settings["logs_folder"])
   filename = f"output_{pid}.log"
   if isStdErr:
     filename = f"errors_{pid}.log"
@@ -90,12 +90,15 @@ def _default_output_callback(pid, output, isStdErr, filterLines):
 
     regis.diagnostics.log_info(f"full output saved to {filepath}")
 
+def _get_coverage_rawdata_filename(program : str):
+  return f"{Path(program).stem}.profraw"
+
 def _create_coverage_report(program, indexedFile):
   with regis.task_raii_printing.TaskRaiiPrint("creating coverage reports"):
 
     if Path(program).stem != Path(indexedFile).stem:
-      return 1
       regis.diagnostics.log_err(f"program stem doesn't match coverage file stem: {Path(program).stem} != {Path(indexedFile).stem}")
+      return 1
 
     regis.code_coverage.create_line_oriented_report(program, indexedFile)
     regis.code_coverage.create_file_level_summary(program, indexedFile)
@@ -115,39 +118,54 @@ class RunnableType(Enum):
   Ubsan = auto()
 
 class Runnable():
-  def __init__(self, runnableDict):
+  def __init__(self, runnableDict, args = []):
     self.program = runnableDict['Program']
     self.type = RunnableType[runnableDict['RunnableType']]
+    self.args = args
+    self.proc = None
+    self.terminated = False
+    self.finished = False
   
   def run(self):
     regis.diagnostics.log_info(f"running: {Path(self.program).name}")
+    regis.diagnostics.log_info(f"with args: {self.args}")
+
+    # error code by default in case we don't trigger any runnable
+    rc = 1
 
     if self.type == RunnableType.Default:
-      return self._default_run()
+      rc = self._default_run()
     
     if self.type == RunnableType.Coverage:
-      return self._run_coverage()
+      rc = self._run_coverage()
     
     if self.type == RunnableType.Asan:
-      return self._run_asan()
+      rc = self._run_asan()
     
     if self.type == RunnableType.Ubsan:
-      return self._run_ubsan()
+      rc = self._run_ubsan()
         
-    # Don't know what type we are, return error code
-    return 1
+    self.finished = True
+    return rc
+
+  def terminate(self):
+    if self.proc:
+      self.proc.terminate()
+
+    self.terminated = True
+    self.finished = True
 
   def _default_run(self):
-      proc = regis.util.run_subprocess(self.program)
-      return regis.util.wait_for_process(proc)
+    self.proc = regis.util.run_subprocess(self.program, self.args)
+    return regis.util.wait_for_process(self.proc)
 
   def _run_coverage(self):
     # First run the program
     coverage_rawdata_filename = _get_coverage_rawdata_filename(self.program)
     raw_data_file = os.path.join(Path(self.program).parent, coverage_rawdata_filename)
     os.environ["LLVM_PROFILE_FILE"] = raw_data_file # this is what llvm uses to set the raw data filename for the coverage data
-    proc = regis.util.run_subprocess(self.program)
-    rc = regis.util.wait_for_process(proc)
+    self.proc = regis.util.run_subprocess(self.program, self.args)
+    rc = regis.util.wait_for_process(self.proc)
 
     # Then index the raw data file
     indexed_file = regis.code_coverage.create_index_rawdata(raw_data_file)
@@ -161,31 +179,44 @@ class Runnable():
     return rc
   
   def _run_asan(self):
-    log_folder_path = Path(self.program).parent
-    log_folder = log_folder_path.as_posix()
     rc = 0
 
-    # for some reason, setting an absolute path for the log folder doesn't work
-    # so we have to set the working directory of the program to where it's located so the log file will be there as well
     # ASAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
     # ASAN_OPTIONS flags: https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
-    asan_options = f"print_stacktrace=1:log_path=asan.log"
+    log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+    asan_log_path = os.path.join(log_folder, 'asan.log').replace('\\', '/')
+    asan_options = f"print_stacktrace=1:log_path=\"{asan_log_path}\""
     os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
     
-    proc = regis.util.run_subprocess_with_working_dir(self.program, log_folder)
-    new_rc = regis.util.wait_for_process(proc)
-    log_file_path = os.path.join(log_folder, f"asan.log.{proc.pid}")
-    if new_rc != 0 or os.path.exists(log_file_path):
-      regis.diagnostics.log_err(f"address sanitizer failed for {program}") # use full path to avoid ambiguity
-      regis.diagnostics.log_err(f"for more info, please check: {log_file_path}")
+    self.proc = regis.util.run_subprocess(self.program, self.args)
+    new_rc = regis.util.wait_for_process(self.proc)
+    if new_rc != 0 or os.path.exists(asan_log_path):
+      regis.diagnostics.log_err(f"address sanitizer failed for {self.program}") # use full path to avoid ambiguity
+      regis.diagnostics.log_err(f"for more info, please check: {asan_log_path}")
       new_rc = 1
     rc |= new_rc
 
     return rc
 
   def _run_ubsan(self):
-    ubsan_options = f"print_stacktrace=1:log_path=fuzzy.log"
+    rc = 0
+
+    # UBSAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
+    log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+    ubsan_log_path = os.path.join(log_folder, 'ubsan.log').replace('\\', '/')
+    ubsan_options = f"print_stacktrace=1:log_path=\"{ubsan_log_path}\""
     os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
+    
+    self.proc = regis.util.run_subprocess(self.program, self.args)
+    new_rc = regis.util.wait_for_process(proc)
+    if new_rc != 0 or os.path.exists(ubsan_log_path):
+      regis.diagnostics.log_err(f"address sanitizer failed for {self.program}") # use full path to avoid ambiguity
+      regis.diagnostics.log_err(f"for more info, please check: {ubsan_options}")
+      new_rc = 1
+    rc |= new_rc
+
+    return rc
+
 
 # ---------------------------------------------
 # Code Analysis jobs
@@ -570,7 +601,7 @@ class AutoTestJob():
 
     # Now build the projects we're interested in
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    rc |= self._build(singleThreaded)
+    rc |= self._build(self.projects, singleThreaded)
 
     # if any builds fail, we can't run any tests
     # so we exit here
@@ -589,10 +620,11 @@ class AutoTestJob():
       project_settings = auto_test_projects[project]
       runnables = project_settings['TargetRunnables']
       working_dir = project_settings['WorkingDir']
+      test_file = _find_tests_file(project_settings)
 
       # run all the tests
-      new_rc = self._run(runnables, working_dir)
-      _pass_results[f'auto tests result - {project}'] = rc
+      new_rc = self._run(runnables, working_dir, test_file, self.timeout_in_seconds)
+      _pass_results[f'auto tests result - {project}'] = new_rc
 
       rc |= new_rc
 
@@ -628,20 +660,41 @@ class AutoTestJob():
   def _build(self, projects : list[str], singleThreaded : bool):
     return _build_files(auto_test_intermediate_dir, projects, singleThreaded)
   
-  def _run(self, runnables : list[str], workingDir : str):
+  def _run(self, runnables : list[str], workingDir : str, testFilePath : str, timeoutInSeconds : int):
+    json_blob = regis.rex_json.load_file(testFilePath)
+
     with regis.task_raii_printing.TaskRaiiPrint("running auto tests"):
       with regis.util.temp_cwd(workingDir):
         rc = 0
-    
-        # loop over each unit test program path and run it
-        for runnable_dict in runnables:
-          runnable = Runnable(runnable_dict)
-          new_rc = runnable.run()
 
-          if new_rc != 0:
-            regis.diagnostics.log_err(f"unit test failed for {runnable.program}") # use full path to avoid ambiguity
-          rc |= new_rc
+        for test in json_blob:
+          command_line : str = json_blob[test]["command_line"]
+          now = time.time()
+          max_seconds = timeoutInSeconds
+          def monitor_runnable(runnable : Runnable):
+            while not runnable.finished:
+              duration = time.time() - now
+              if duration > max_seconds:
+                runnable.terminate()
 
+              time.sleep(1)
+
+          # loop over each unit test program path and run it
+          for runnable_dict in runnables:
+            runnable = Runnable(runnable_dict, command_line)
+            thread = threading.Thread(target=monitor_runnable, args=(runnable,))
+            thread.start()
+
+            new_rc = runnable.run()
+            thread.join()
+
+            if new_rc != 0:
+              if runnable.terminated:
+                regis.diagnostics.log_err(f"auto test timeout triggered for {runnable.program} after {max_seconds} seconds") # use full path to avoid ambiguity
+              else:
+                rc |= new_rc
+                regis.diagnostics.log_err(f"auto test failed for {runnable.program} with returncode {new_rc}") # use full path to avoid ambiguity
+          
         return rc
   
 # ---------------------------------------------
@@ -692,7 +745,7 @@ class FuzzyTestJob():
 
     # Now build the projects we're interested in
     regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    rc |= _build_fuzzy_testing(self.projects, singleThreaded)
+    rc |= self._build(self.projects, singleThreaded)
 
     # if any builds fail we can't run any tests
     # so we exit here
@@ -731,18 +784,16 @@ class FuzzyTestJob():
       config_args = []
       config_args.append(f'-intermediate-dir={fuzzy_intermediate_dir}')
       config_args.append('-enable-fuzzy-testing')
+      config_args.append('-disable-default-configs')
 
       if self.enable_code_coverage:
         config_args.append('-enable-code-coverage')
-        config_args.append('-disable-default-configs')
 
       if self.enable_asan:
         config_args.append('-enable-address-sanitizer')
-        config_args.append('-disable-default-configs')
 
       if self.enable_ubsan:
         config_args.append('-enable-ub-sanitizer')
-        config_args.append('-disable-default-configs')
 
       config = regis.generation.create_config(' '.join(config_args))
       return _generate_test_files(self.should_clean, fuzzy_intermediate_dir, config)
@@ -759,28 +810,34 @@ class FuzzyTestJob():
     
         # loop over each unit test program path and run it
         for runnable_dict in runnables:
-          runnable = Runnable(runnable_dict)
+          args = []
+          args.append('corpus')
+          args.append(f'-runs={self.num_runs}')
+          runnable = Runnable(runnable_dict, args)
           new_rc = runnable.run()
 
-          # for some reason, setting an absolute path for the log folder doesn't work
-          # so we have to set the working directory of the program to where it's located so the log file will be there as well
-          # Can't use both ASAN as well as UBSAN options, so we'll set the same for both and hope that works
-          # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94328
-          # https://stackoverflow.com/questions/60774638/logging-control-for-address-sanitizer-plus-undefined-behavior-sanitizer
-          asan_options = f"print_stacktrace=1:log_path=fuzzy.log"
-          ubsan_options = f"print_stacktrace=1:log_path=fuzzy.log"
-          os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
-          os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
-          regis.diagnostics.log_info(f'running {program}')
-          proc = regis.util.run_subprocess(f"{program} corpus -runs={numRuns}")
-          new_rc = regis.util.wait_for_process(proc)
-          log_file_path = f"fuzzy.log.{proc.pid}"
-          if new_rc != 0 or os.path.exists(log_file_path): # if there's a ubsan.log.pid created, the tool found issues
-            regis.diagnostics.log_err(f"fuzzy testing failed for {program}") # use full path to avoid ambiguity
-            if os.path.exists(log_file_path):
-              regis.diagnostics.log_err(f"issues found while fuzzing!")
-              regis.diagnostics.log_err(f"for more info, please check: {log_file_path}")
-            new_rc = 1
+          if new_rc != 0:
+            regis.diagnostics.log_err(f"fuzzy testing failed for {runnable.program}") # use full path to avoid ambiguity
+
+          # # for some reason, setting an absolute path for the log folder doesn't work
+          # # so we have to set the working directory of the program to where it's located so the log file will be there as well
+          # # Can't use both ASAN as well as UBSAN options, so we'll set the same for both and hope that works
+          # # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94328
+          # # https://stackoverflow.com/questions/60774638/logging-control-for-address-sanitizer-plus-undefined-behavior-sanitizer
+          # asan_options = f"print_stacktrace=1:log_path=fuzzy.log"
+          # ubsan_options = f"print_stacktrace=1:log_path=fuzzy.log"
+          # os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
+          # os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
+          # regis.diagnostics.log_info(f'running {program}')
+          # proc = regis.util.run_subprocess(f"{program} corpus -runs={numRuns}")
+          # new_rc = regis.util.wait_for_process(proc)
+          # log_file_path = f"fuzzy.log.{proc.pid}"
+          # if new_rc != 0 or os.path.exists(log_file_path): # if there's a ubsan.log.pid created, the tool found issues
+          #   regis.diagnostics.log_err(f"fuzzy testing failed for {program}") # use full path to avoid ambiguity
+          #   if os.path.exists(log_file_path):
+          #     regis.diagnostics.log_err(f"issues found while fuzzing!")
+          #     regis.diagnostics.log_err(f"for more info, please check: {log_file_path}")
+          #   new_rc = 1
           rc |= new_rc
 
         return rc
@@ -1209,114 +1266,65 @@ def test_clang_tidy(filesRegex = ".*", shouldClean : bool = True, singleThreaded
   return rc
 
 def test_unit_tests(projects, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCoverage : bool = False):
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-
   unit_test_job = UnitTestJob(projects, shouldClean, enableAsan, enableUbsan, enableCoverage)
   return unit_test_job.execute(singleThreaded)
 
-def test_fuzzy_testing(projects, numRuns, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False):
+def test_fuzzy_testing(projects, numRuns, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCodeCoverage : bool = False):
+  fuzzy_test_job = FuzzyTestJob(projects, numRuns, shouldClean, enableAsan, enableUbsan, enableCodeCoverage)
+  fuzzy_test_job.execute(singleThreaded)
   
-  fuzzy_test_job = FuzzyTestJob(projects, )
-  
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_fuzzy_testing(shouldClean, enableAsan, enableUbsan)
-  _pass_results["fuzzy testing generation"] = rc
+  # regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+  # rc = _generate_fuzzy_testing(shouldClean, enableAsan, enableUbsan)
+  # _pass_results["fuzzy testing generation"] = rc
 
-  if rc != 0:
-    regis.diagnostics.log_err(f"failed to generate fuzzy code")
-    return rc
+  # if rc != 0:
+  #   regis.diagnostics.log_err(f"failed to generate fuzzy code")
+  #   return rc
 
-  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
-  if not os.path.exists(test_projects_path):
-    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
-    return rc | 1
+  # test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
+  # if not os.path.exists(test_projects_path):
+  #   regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
+  #   return rc | 1
 
-  # if no projects are specified, we run on all of them
-  test_projects = regis.rex_json.load_file(test_projects_path)
-  fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("Fuzzy"))
+  # # if no projects are specified, we run on all of them
+  # test_projects = regis.rex_json.load_file(test_projects_path)
+  # fuzzy_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("Fuzzy"))
 
-  projects = projects or list(fuzzy_test_projects.keys())
+  # projects = projects or list(fuzzy_test_projects.keys())
 
-  if not projects:
-    regis.diagnostics.log_warn(f'No fuzzy test projects found. have you generated them?')
-    _pass_results["fuzzy testing - nothing to do"] = rc
-    return rc
+  # if not projects:
+  #   regis.diagnostics.log_warn(f'No fuzzy test projects found. have you generated them?')
+  #   _pass_results["fuzzy testing - nothing to do"] = rc
+  #   return rc
 
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _build_fuzzy_testing(projects, singleThreaded)
+  # regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+  # rc |= _build_fuzzy_testing(projects, singleThreaded)
 
-  _pass_results["fuzzy testing building"] = rc
-  if rc != 0:
-    regis.diagnostics.log_err(f"failed to build fuzzy code")
-    return rc
+  # _pass_results["fuzzy testing building"] = rc
+  # if rc != 0:
+  #   regis.diagnostics.log_err(f"failed to build fuzzy code")
+  #   return rc
 
-  for project in projects:
-    if project not in fuzzy_test_projects:
-      regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
-      continue
+  # for project in projects:
+  #   if project not in fuzzy_test_projects:
+  #     regis.diagnostics.log_err(f'project "{project}" not found in {test_projects_path}. Please check its generation settings')
+  #     continue
 
-    project_settings = fuzzy_test_projects[project]
-    executables = project_settings['TargetPaths']
+  #   project_settings = fuzzy_test_projects[project]
+  #   executables = project_settings['TargetPaths']
 
-    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['WorkingDir']):
-      res = _run_fuzzy_testing(executables, numRuns)
-    _pass_results[f"fuzzy testing result - {project}"] = res
-    rc |= res
+  #   regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
+  #   with regis.util.temp_cwd(project_settings['WorkingDir']):
+  #     res = _run_fuzzy_testing(executables, numRuns)
+  #   _pass_results[f"fuzzy testing result - {project}"] = res
+  #   rc |= res
 
-  if rc != 0:
-    regis.diagnostics.log_err(f"invalid code found with fuzzy")
-    return rc
+  # if rc != 0:
+  #   regis.diagnostics.log_err(f"invalid code found with fuzzy")
+  #   return rc
 
-  return rc
+  # return rc
 
-def run_auto_tests(configs, compilers, projects, timeoutInSeconds : int, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False):
-  rc = 0
-
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc = _generate_auto_tests(shouldClean, enableAsan, enableUbsan)
-  _pass_results["auto testing generation"] = rc
-  
-  if rc != 0:
-    regis.diagnostics.log_err(f"failed to generate auto test code")
-    return rc
-  
-  test_projects_path = os.path.join(root_path, settings['intermediate_folder'], settings['build_folder'], 'test_projects.json')
-  if not os.path.exists(test_projects_path):
-    regis.diagnostics.log_err(f'"{test_projects_path}" does not exist.')
-    return rc | 1
-
-  # if no projects are specified, we run on all of them
-  test_projects = regis.rex_json.load_file(test_projects_path)
-  auto_test_projects = CaseInsensitiveDict(test_projects["TypeSettings"].get("AutoTest"))
-
-  projects = projects or list(auto_test_projects.keys())
-
-  if not projects:
-    regis.diagnostics.log_warn(f'No auto test projects found. have you generated them?')
-    _pass_results["auto testing - nothing to do"] = rc
-    return rc
-
-  regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-  rc |= _build_auto_tests(configs, compilers, projects, singleThreaded)
-  _pass_results["auto testing building"] = rc
-
-  if rc != 0:
-    regis.diagnostics.log_err(f"failed to build auto test code")
-    return rc
-  
-  for project in projects:
-    project_settings = auto_test_projects[project]
-    executables = project_settings['TargetPaths']
-    test_file = _find_tests_file(project_settings)
-    regis.diagnostics.log_no_color("-----------------------------------------------------------------------------")
-    with regis.util.temp_cwd(project_settings['WorkingDir']):
-      res = _run_auto_tests(test_file, executables, timeoutInSeconds)
-    _pass_results[f"auto testing result - {project}"] = res
-    rc |= res
-
-  if rc != 0:
-    regis.diagnostics.log_err(f"auto tests failed")
-    return rc
-
-  return rc
+def run_auto_tests(projects, timeoutInSeconds : int, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCodeCoverage : bool = False):
+  auto_test_job = AutoTestJob(projects, timeoutInSeconds, shouldClean, enableAsan, enableUbsan, enableCodeCoverage)
+  auto_test_job.execute(singleThreaded)

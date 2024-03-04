@@ -143,8 +143,12 @@ def find_files_with_extension(path : str, extension : str):
 def is_windows():
   return os.name == 'nt'
 
-def run_subprocess(command):
+def run_subprocess_from_command(command : str):
   proc = subprocess.Popen(command)
+  return proc
+
+def run_subprocess(command : str, args = []):
+  proc = subprocess.Popen(executable=command, args=args)
   return proc
 
 def run_and_get_output(command):
