@@ -217,7 +217,6 @@ class Runnable():
 
     return rc
 
-
 # ---------------------------------------------
 # Code Analysis jobs
 # ---------------------------------------------
@@ -570,7 +569,7 @@ class UnitTestJob():
   
   def _build(self, projects : list[str], singleThreaded : bool):
     with regis.task_raii_printing.TaskRaiiPrint("building unit tests"):
-      return _build_files(unit_tests_intermediate_dir, projects, singleThreaded)
+      return _build_files(projects, singleThreaded)
   
   def _run(self, runnables : list, workingDir : str):
     with regis.task_raii_printing.TaskRaiiPrint("running unit tests"):
@@ -694,7 +693,7 @@ class AutoTestJob():
       return _generate_test_files(self.should_clean, auto_test_intermediate_dir, config)
   
   def _build(self, projects : list[str], singleThreaded : bool):
-    return _build_files(auto_test_intermediate_dir, projects, singleThreaded)
+    return _build_files(projects, singleThreaded)
   
   def _run(self, runnables : list[str], workingDir : str, testFilePath : str, timeoutInSeconds : int):
     json_blob = regis.rex_json.load_file(testFilePath)
@@ -836,7 +835,7 @@ class FuzzyTestJob():
   
   def _build(self, projects : list[str], singleThreaded : bool):
     with regis.task_raii_printing.TaskRaiiPrint("building unit tests"):
-      return _build_files(unit_tests_intermediate_dir, projects, singleThreaded)
+      return _build_files(projects, singleThreaded)
   
   def _run(self, runnables : list, workingDir : str):
      with regis.task_raii_printing.TaskRaiiPrint("running unit tests"):
@@ -871,10 +870,6 @@ def _get_project_name_of_compdb(compdbPath):
   
   return ""
 
-def _generate_clang_tidy(shouldClean : bool):
-  config = regis.generation.create_config(f'-intermediate-dir={clang_tidy_intermediate_dir} -enable-clang-tools -disable-clang-tidy-for-thirdparty -IDE None')
-  return _generate_test_files(shouldClean, auto_test_intermediate_dir, config)
-
 def _find_files(folder, predicate):
   found_files : list[str] = []
 
@@ -885,75 +880,6 @@ def _find_files(folder, predicate):
         found_files.append(path)      
   
   return found_files
-
-def _run_clang_tidy(filesRegex, shouldClean : bool = True, singleThreaded : bool = False, filterLines : bool = False, shouldFix : bool = False):
-  """Run clang-tidy on the codebase"""
-  rc = [0]
-  def _run(cmd : str, rc : int):
-    """Run the actual clang-tidy command"""
-    regis.diagnostics.log_info(f"executing: {cmd}")
-    proc = regis.util.run_subprocess_with_callback(cmd, _default_output_callback, filterLines)
-    new_rc = regis.util.wait_for_process(proc)
-    if new_rc != 0:
-      regis.diagnostics.log_err(f"clang-tidy failed for {compiler_db}")
-      regis.diagnostics.log_err(f"config file: {config_file_path}")
-    rc[0] |= new_rc
-
-  task_print = regis.task_raii_printing.TaskRaiiPrint("running clang-tidy")
-
-  # get the compiler dbs that are just generated
-  result = _find_files(_create_full_intermediate_dir(clang_tidy_intermediate_dir), lambda file: 'compile_commands.json' in file)
-
-  # create the clang-tidy jobs, we limit ourselves to 5 threads at the moment as running clang-tidy is quite performance heavy
-  threads : list[threading.Thread] = []
-  threads_to_use = 5
-  script_path = os.path.dirname(__file__)
-  clang_tidy_path = tool_paths_dict["clang_tidy_path"]
-  clang_apply_replacements_path = tool_paths_dict["clang_apply_replacements_path"]
-
-  for compiler_db in result:
-    compiler_db_folder = Path(compiler_db).parent
-    config_file_path = f"{compiler_db_folder}/.clang-tidy_second_pass"
-
-    project_name = _get_project_name_of_compdb(compiler_db_folder)
-    header_filters = regis.util.retrieve_header_filters(compiler_db_folder, project_name)
-    header_filters_regex = regis.util.create_header_filter_regex(header_filters)
-    
-    # build up the clang-tidy command
-    cmd = f"py \"{script_path}/run_clang_tidy.py\""
-    cmd += f" -clang-tidy-binary=\"{clang_tidy_path}\""  # location of clang-tidy executable
-    cmd += f" -clang-apply-replacements-binary=\"{clang_apply_replacements_path}\"" # location of clang-apply-replacements executable
-    cmd += f" -config-file=\"{config_file_path}\"" # location of clang-tidy config file
-    cmd += f" -p=\"{compiler_db_folder}\"" # location of compiler db folder (not the location to the file, but to its parent folder)
-    cmd += f" -header-filter={header_filters_regex}" # only care about headers of the current project
-    cmd += f" -quiet" # we don't want extensive logging
-    cmd += f" -j={threads_to_use}" # only use a certain amount of threads, to reduce the performance overhead
-
-    # auto fix found issues. This doesn't work for every enabled check.
-    if shouldFix:
-      cmd += f" -fix"
-
-    # add the regex of the files we care about
-    cmd += f" {filesRegex}"
-
-    # perform an incremental run, avoid rescanning previous scanned files that didn't change (ignores cpp files if their headers changed)
-    if not shouldClean:
-      cmd += f" -incremental"
-
-    # dirty hack to enable single thread mode vs multi threaded mode
-    # in single threaded mode, we join the threads immediately
-    thread = threading.Thread(target=_run, args=(cmd,rc,))
-    thread.start()
-
-    if singleThreaded:
-      thread.join()
-    else:
-      threads.append(thread)
-
-  for thread in threads:
-    thread.join()
-
-  return rc[0]
 
 def _generate_test_files(shouldClean : bool, intermediateDir : str, config):
   """Perform a generation for a test"""
@@ -966,7 +892,7 @@ def _generate_test_files(shouldClean : bool, intermediateDir : str, config):
 
   return regis.generation.new_generation(settings, config)
 
-def _build_files(intermediateDir : str, projectsToBuild : list[str] = "", singleThreaded : bool = False):
+def _build_files(projectsToBuild : list[str] = "", singleThreaded : bool = False):
   """Build certain projects under a intermediate directory in certain configs using certain compilers
   This is useful after a generation to make sure all projects are build
   """
