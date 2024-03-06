@@ -209,7 +209,7 @@ def apply_fixes(args, clang_apply_replacements_binary, tmpdir):
   invocation.append(f' {tmpdir}')
   
   cmd = ''.join(invocation)
-  proc = regis.util.run_subprocess(''.join(cmd))
+  proc = regis.util.run_subprocess_from_command(''.join(cmd))
   regis.util.wait_for_process(proc)
   
 def invocation_string(build_path : str, file : str, config_path : str):

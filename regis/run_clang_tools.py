@@ -59,7 +59,7 @@ def run(projectName : str, compdb : str, srcRoot : str, bRunAllChecks : bool, re
     if not bRebuild:
       cmd += ' -incremental'
     
-    proc = regis.util.run_subprocess(cmd)
+    proc = regis.util.run_subprocess_from_command(cmd)
     rc = regis.util.wait_for_process(proc)
 
     if rc != 0:
