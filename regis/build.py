@@ -269,9 +269,9 @@ def new_build(projectName : str, config : str, compiler : str, shouldBuild : boo
   for op in dir_watcher.operations:
     if regis.util.is_executable(op.filepath):
       if (op.op == regis.dir_watcher.FileOperation.Deleted):
-        _update_cleaned_projects(project, config, compiler, op.filepath)
+        _update_cleaned_projects(projectName, config, compiler, op.filepath)
       elif (op.op == regis.dir_watcher.FileOperation.Created):
-        _update_build_projects(project, config, compiler, op.filepath)
+        _update_build_projects(projectName, config, compiler, op.filepath)
 
   return res
   
