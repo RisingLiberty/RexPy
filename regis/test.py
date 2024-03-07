@@ -114,8 +114,7 @@ def _parse_coverage_report(indexedFile):
 class RunnableType(Enum):
   Default = 0,
   Coverage = auto(),
-  Asan = auto(),
-  Ubsan = auto()
+  Sanitizer = auto(),
 
 class Runnable():
   def __init__(self, runnableDict, args = []):
@@ -139,12 +138,9 @@ class Runnable():
     if self.type == RunnableType.Coverage:
       rc = self._run_coverage()
     
-    if self.type == RunnableType.Asan:
-      rc = self._run_asan()
-    
-    if self.type == RunnableType.Ubsan:
-      rc = self._run_ubsan()
-        
+    if self.type == RunnableType.Sanitizer:
+      rc = self._run_sanitizer()
+            
     self.finished = True
     return rc
 
@@ -178,40 +174,26 @@ class Runnable():
 
     return rc
   
-  def _run_asan(self):
+  def _run_sanitizer(self):
     rc = 0
 
     # ASAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
     # ASAN_OPTIONS flags: https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
-    log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
-    asan_log_path = os.path.join(log_folder, 'asan.log').replace('\\', '/')
-    asan_options = f"print_stacktrace=1:log_path=\"{asan_log_path}\""
-    os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
-    
-    self.proc = regis.util.run_subprocess(self.program, self.args)
-    new_rc = regis.util.wait_for_process(self.proc)
-    if new_rc != 0 or os.path.exists(asan_log_path):
-      regis.diagnostics.log_err(f"address sanitizer failed for {self.program}") # use full path to avoid ambiguity
-      regis.diagnostics.log_err(f"for more info, please check: {asan_log_path}")
-      new_rc = 1
-    rc |= new_rc
-
-    return rc
-
-  def _run_ubsan(self):
-    rc = 0
-
     # UBSAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
     log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
+    asan_log_path = os.path.join(log_folder, 'asan.log').replace('\\', '/')
     ubsan_log_path = os.path.join(log_folder, 'ubsan.log').replace('\\', '/')
+    asan_options = f"print_stacktrace=1:log_path=\"{asan_log_path}\""
     ubsan_options = f"print_stacktrace=1:log_path=\"{ubsan_log_path}\""
+    os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
     os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
     
     self.proc = regis.util.run_subprocess(self.program, self.args)
-    new_rc = regis.util.wait_for_process(proc)
-    if new_rc != 0 or os.path.exists(ubsan_log_path):
-      regis.diagnostics.log_err(f"address sanitizer failed for {self.program}") # use full path to avoid ambiguity
-      regis.diagnostics.log_err(f"for more info, please check: {ubsan_options}")
+    new_rc = regis.util.wait_for_process(self.proc)
+    if new_rc != 0 or os.path.exists(asan_log_path) or os.path.exists(ubsan_log_path):
+      regis.diagnostics.log_err(f"sanitization failed for {self.program}") # use full path to avoid ambiguity
+      regis.diagnostics.log_err(f"for more info regarding asan, please check: {asan_log_path}")
+      regis.diagnostics.log_err(f"for more info regarding ubsan, please check: {ubsan_log_path}")
       new_rc = 1
     rc |= new_rc
 
