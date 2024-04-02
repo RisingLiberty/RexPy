@@ -91,13 +91,13 @@ def _make_optional_arg(arg : str):
 
 def _add_config_arguments(parser : argparse.ArgumentParser, defaultConfig : dict):
   """Load the sharpmake config file from disk and add the options as arguments to this script."""
-  
-  for setting in defaultConfig:
+  settings = defaultConfig["settings"]
+  for setting in settings:
     arg = _make_optional_arg(setting)
-    val = defaultConfig[setting]['Value']
-    desc = defaultConfig[setting]['Description']
-    if 'Options' in defaultConfig[setting]:
-      desc += f' Options: {defaultConfig[setting]["Options"]}'
+    val = settings[setting]['Value']
+    desc = settings[setting]['Description']
+    if 'Options' in settings[setting]:
+      desc += f' Options: {settings[setting]["Options"]}'
     
     if type(val) == bool:
       parser.add_argument(arg, help=desc, action='store_true', default=val)
@@ -107,12 +107,25 @@ def _add_config_arguments(parser : argparse.ArgumentParser, defaultConfig : dict
 def _load_default_config():
   return regis.rex_json.load_file(os.path.join(root, "_build", "sharpmake", "data", "default_config.json"))
 
+def _load_correct_config(useDefaultConfig : bool):
+  default_config = _load_default_config()
+  if useDefaultConfig:
+    return default_config
+
+  if not os.path.exists(_config_path()):
+    return default_config
+
+  cached_config = _load_config_file()
+  default_version = default_config['version']
+  cached_version = cached_config.get('version')
+  if default_version != cached_version:
+    regis.diagnostics.log_info('generation config version mismatch. Using default config')
+    return default_config
+
+  return cached_config
+
 def add_config_arguments_to_parser(parser, useDefaultConfig : bool):
-  if useDefaultConfig or not os.path.exists(_config_path()):
-    _add_config_arguments(parser, _load_default_config())
-  else:
-    _add_config_arguments(parser, _load_config_file())
-  
+  _add_config_arguments(parser, _load_correct_config(useDefaultConfig))  
 
 def create_config(args, useDefault = True):
   """Create a config dictionary based on the arguments passed in."""
@@ -124,15 +137,15 @@ def create_config(args, useDefault = True):
     add_config_arguments_to_parser(parser, useDefault)
     args = parser.parse_args(shlex.split(args))
 
-  config_input = _load_default_config() if useDefault or not os.path.exists(_config_path()) else _load_config_file()
+  config_input = _load_correct_config(useDefault)
   config : dict = copy.deepcopy(config_input)
   for arg in vars(args):
     arg_name = arg
     arg_name = arg_name.replace('_', '-') # python converts all hyphens into underscores so we need to convert them back
     arg_val = getattr(args, arg)
 
-    if arg_name in config:
-      config[arg_name]['Value'] = arg_val
+    if arg_name in config['settings']:
+      config['settings'][arg_name]['Value'] = arg_val
 
   return config
 
