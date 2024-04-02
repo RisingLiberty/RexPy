@@ -107,14 +107,14 @@ def __launch_download_thread(url):
     return thread  
 
 def __download_lib(name, version, numZipFiles):
-  task_print = regis.task_raii_printing.TaskRaiiPrint(f"Downloading lib {name} {version}")
+  with regis.task_raii_printing.TaskRaiiPrint(f"Downloading lib {name} {version}"):
+    with regis.util.LoadingAnimation('Downloading'):
+      threads = []
+      for i in range(numZipFiles):
+        threads.append(__launch_download_thread((f"https://github.com/RisingLiberty/RegisZip/raw/{version}/data/{name}.zip.{(i + 1):03d}")))
 
-  threads = []
-  for i in range(numZipFiles):
-    threads.append(__launch_download_thread((f"https://github.com/RisingLiberty/RegisZip/raw/{version}/data/{name}.zip.{(i + 1):03d}")))
-
-  for thread in threads:
-    thread.join()
+      for thread in threads:
+        thread.join()
 
 def __enumerate_libs(zipsFolder):
   zips = os.listdir(zipsFolder)
@@ -136,21 +136,23 @@ def __enumerate_zip_files_for_lib(stem, folder):
   return lib_zip_files
 
 def __unzip_lib(name):
-  task_print = regis.task_raii_printing.TaskRaiiPrint("Unzipping files")
-  libs_to_unzip = __enumerate_libs(zip_downloads_path)
+  with regis.task_raii_printing.TaskRaiiPrint("Unzipping files"):
+    libs_to_unzip = __enumerate_libs(zip_downloads_path)
 
-  for lib in libs_to_unzip:
-    lib_zip_files = __enumerate_zip_files_for_lib(lib, zip_downloads_path)
-    lib_master_zip = os.path.join(zip_downloads_path, f"{lib}.zip")
-    with open(lib_master_zip, "ab") as f:
-      for lib_zip in lib_zip_files:
-        with open(lib_zip, "rb") as z:
-            f.write(z.read())
+    with regis.util.LoadingAnimation('Extracting zips'):
+      for lib in libs_to_unzip:
+        lib_zip_files = __enumerate_zip_files_for_lib(lib, zip_downloads_path)
+        lib_master_zip = os.path.join(zip_downloads_path, f"{lib}")
+        regis.diagnostics.log_info(f'extracting {lib} to {lib_master_zip}')
+        with open(lib_master_zip, "ab") as f:
+          for lib_zip in lib_zip_files:
+            with open(lib_zip, "rb") as z:
+                f.write(z.read())
 
-    with zipfile.ZipFile(lib_master_zip, "r") as zip_obj:
-        zip_obj.extractall(libs_install_dir)
+        with zipfile.ZipFile(lib_master_zip, "r") as zip_obj:
+            zip_obj.extractall(libs_install_dir)
 
-  regis.diagnostics.log_info(f"libs unzipped to {libs_install_dir}")
+      regis.diagnostics.log_info(f"libs unzipped to {libs_install_dir}")
 
 def __is_up_to_date(installPaths, lib):
   for install_path in installPaths:
@@ -188,24 +190,24 @@ def __look_for_required_libs(required_libs):
 # checks all paths of the required libs, making sure all of them are installed
 # if they're not installed, it'll flag a required_lib as not fully installed
 def __are_installed():
-  task_print = regis.task_raii_printing.TaskRaiiPrint("Checking if libs are installed")
+  with regis.task_raii_printing.TaskRaiiPrint("Checking if libs are installed"):
 
-  global required_libs
-  required_libs = __load_required_libs_dict()
-  
-  global lib_paths_dict
-  if lib_paths_dict == None:
-    lib_paths_dict = {}
+    global required_libs
+    required_libs = __load_required_libs_dict()
     
-  global not_found_libs
-  not_found_libs = __look_for_required_libs(required_libs)
-  
-  if len(not_found_libs) == 0:
-    regis.diagnostics.log_info(f'All libs found')
-  else:
-    regis.diagnostics.log_warn(f'Libs that weren\'t found or were out of date')
-    for lib in not_found_libs:
-      regis.diagnostics.log_warn(f"\t{lib['config_name']}")
+    global lib_paths_dict
+    if lib_paths_dict == None:
+      lib_paths_dict = {}
+      
+    global not_found_libs
+    not_found_libs = __look_for_required_libs(required_libs)
+    
+    if len(not_found_libs) == 0:
+      regis.diagnostics.log_info(f'All libs found')
+    else:
+      regis.diagnostics.log_warn(f'Libs that weren\'t found or were out of date')
+      for lib in not_found_libs:
+        regis.diagnostics.log_warn(f"\t{lib['config_name']}")
 
 def __download():
   # create the temporary path for zips

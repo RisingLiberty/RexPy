@@ -7,6 +7,7 @@ from enum import Enum
 import regis.diagnostics
 import regis.util
 import regis.rex_json
+import regis.task_raii_printing
 
 root = regis.util.find_root()
 settings = regis.rex_json.load_file(os.path.join(root, regis.util.settingsPathFromRoot))
@@ -129,46 +130,46 @@ def __verify_external(externalPath, requiredTag):
         return False
 
 def __install_external(external):
-    task_print = regis.task_raii_printing.TaskRaiiPrint("Installing externals..")
-    external_url = external["url"]
-    external_name = external["name"]
-    external_tag = external["tag"]
-    external_store = external["storage"]
-    external_store = external_store.replace("~", root)
+    with regis.task_raii_printing.TaskRaiiPrint("Installing externals.."):
+        external_url = external["url"]
+        external_name = external["name"]
+        external_tag = external["tag"]
+        external_store = external["storage"]
+        external_store = external_store.replace("~", root)
 
-    externals_dir = os.path.join(external_store, external_name)
+        externals_dir = os.path.join(external_store, external_name)
 
-    # if the external is already present we need to check if we need to redownload anything
-    valid_external = __verify_external(externals_dir, external_tag)
-    if not valid_external:    
-        # any data that was already available will be deleted 
-        # the data will be out of date anyway when a download is triggered
-        if os.path.exists(externals_dir):
-            shutil.rmtree(externals_dir)
+        # if the external is already present we need to check if we need to redownload anything
+        valid_external = __verify_external(externals_dir, external_tag)
+        if not valid_external:    
+            # any data that was already available will be deleted 
+            # the data will be out of date anyway when a download is triggered
+            if os.path.exists(externals_dir):
+                shutil.rmtree(externals_dir)
 
-        url = __build_host_path(external_url, external_name, external_tag)
-        added_directories = __download_external(url)     
+            url = __build_host_path(external_url, external_name, external_tag)
+            added_directories = __download_external(url)     
 
-        if len(added_directories) == 1:
-            # move to output directory
-            shutil.move(os.path.join(temp_dir, added_directories[0]), os.path.join(external_store, added_directories[0]))
-            # change directory name
-            cwd = os.getcwd()
-            os.chdir(external_store)
-            os.rename(added_directories[0], external_name)
-            os.chdir(cwd)
-        elif len(added_directories) > 1:
-            # create output directory
-            if not os.path.exists(externals_dir):
-                os.makedirs(externals_dir)
-            # move to output directory
-            for added_directory in added_directories:
-                shutil.move(os.path.join(temp_dir, added_directory), externals_dir)
-        else:
-            regis.diagnostics.log_err("No directories where extracted.")
-            return
+            if len(added_directories) == 1:
+                # move to output directory
+                shutil.move(os.path.join(temp_dir, added_directories[0]), os.path.join(external_store, added_directories[0]))
+                # change directory name
+                cwd = os.getcwd()
+                os.chdir(external_store)
+                os.rename(added_directories[0], external_name)
+                os.chdir(cwd)
+            elif len(added_directories) > 1:
+                # create output directory
+                if not os.path.exists(externals_dir):
+                    os.makedirs(externals_dir)
+                # move to output directory
+                for added_directory in added_directories:
+                    shutil.move(os.path.join(temp_dir, added_directory), externals_dir)
+            else:
+                regis.diagnostics.log_err("No directories where extracted.")
+                return
 
-        regis.util.create_version_file(externals_dir, external_tag)   
+            regis.util.create_version_file(externals_dir, external_tag)   
 
 def __remove_tmp_dir():
     if os.path.exists(temp_dir):

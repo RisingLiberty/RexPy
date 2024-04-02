@@ -117,13 +117,15 @@ class RunnableType(Enum):
   Sanitizer = auto(),
 
 class Runnable():
-  def __init__(self, runnableDict, args = []):
+  def __init__(self, runnableDict, args = [], enableAsan : bool = False, enableUbsan : bool = False):
     self.program = runnableDict['Program']
     self.type = RunnableType[runnableDict['RunnableType']]
     self.args = args
     self.proc = None
     self.terminated = False
     self.finished = False
+    self.enable_asan = enableAsan
+    self.enable_ubsan = enableUbsan
   
   def run(self):
     regis.diagnostics.log_info(f"running: {Path(self.program).name}")
@@ -181,12 +183,16 @@ class Runnable():
     # ASAN_OPTIONS flags: https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
     # UBSAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
     log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
-    asan_log_path = os.path.join(log_folder, 'asan.log').replace('\\', '/')
-    ubsan_log_path = os.path.join(log_folder, 'ubsan.log').replace('\\', '/')
-    asan_options = f"print_stacktrace=1:log_path=\"{asan_log_path}\""
-    ubsan_options = f"print_stacktrace=1:log_path=\"{ubsan_log_path}\""
-    os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
-    os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
+    
+    if self.enable_asan:
+      asan_log_path = os.path.join(log_folder, 'asan.log').replace('\\', '/')
+      asan_options = f"print_stacktrace=1:log_path=\"{asan_log_path}\""
+      os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
+
+    if self.enable_ubsan:
+      ubsan_log_path = os.path.join(log_folder, 'ubsan.log').replace('\\', '/')
+      ubsan_options = f"print_stacktrace=1:log_path=\"{ubsan_log_path}\""
+      os.environ["UBSAN_OPTIONS"] = ubsan_options # print callstacks and save to log file
     
     self.proc = regis.util.run_subprocess(self.program, self.args)
     new_rc = regis.util.wait_for_process(self.proc)
@@ -560,7 +566,7 @@ class UnitTestJob():
     
         # loop over each unit test program path and run it
         for runnable_dict in runnables:
-          runnable = Runnable(runnable_dict)
+          runnable = Runnable(runnable_dict, [], self.enable_asan, self.enable_ubsan)
           new_rc = runnable.run()
 
           if new_rc != 0:
@@ -698,7 +704,7 @@ class AutoTestJob():
 
           # loop over each unit test program path and run it
           for runnable_dict in runnables:
-            runnable = Runnable(runnable_dict, command_line)
+            runnable = Runnable(runnable_dict, command_line, self.enable_asan, self.enable_ubsan)
             thread = threading.Thread(target=monitor_runnable, args=(runnable,))
             thread.start()
 
@@ -830,7 +836,7 @@ class FuzzyTestJob():
           args = []
           args.append('corpus')
           args.append(f'-runs={self.num_runs}')
-          runnable = Runnable(runnable_dict, args)
+          runnable = Runnable(runnable_dict, args, self.enable_asan, self.enable_ubsan)
           new_rc = runnable.run()
 
           if new_rc != 0:

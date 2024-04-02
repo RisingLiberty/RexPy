@@ -1,6 +1,10 @@
 import os
 import subprocess
 import shutil
+import sys
+import time
+import itertools
+import threading
 from pathlib import Path
 import regis.diagnostics
 import regis.rex_json
@@ -211,3 +215,36 @@ def temp_cwd(newdir : str):
 			os.chdir(self.odir)
 
 	return temp_cwd_(newdir)
+
+class LoadingAnimation():
+    def __init__(self, msg = 'loading'):
+      self.done = False
+      self.msg = msg
+
+
+    def __enter__(self):
+      self.thread = threading.Thread(target=self.start)
+      self.thread.start()
+      return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+      self.stop()
+
+    def start(self):
+      for c in itertools.cycle(['|', '/', '-', '\\']):
+        if self.done:
+            break
+        sys.stdout.write(f'\r{self.msg} ' + c)
+        sys.stdout.flush()
+        time.sleep(0.1)
+      num_spaces = len(self.msg)
+      sys.stdout.write('\rDone!'.rjust(num_spaces, ' '))
+      sys.stdout.write('\n')
+      sys.stdout.flush()
+
+    def stop(self):
+       self.done = True
+       self.thread.join()
+
+
+   
