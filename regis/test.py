@@ -14,6 +14,7 @@ import time
 import threading
 import subprocess
 import re
+import shutil
 import regis.required_tools
 import regis.util
 import regis.task_raii_printing
@@ -926,3 +927,53 @@ def test_fuzzy_testing(projects, numRuns, shouldClean : bool = True, singleThrea
 def run_auto_tests(projects, timeoutInSeconds : int, shouldClean : bool = True, singleThreaded : bool = False, enableAsan : bool = False, enableUbsan : bool = False, enableCodeCoverage : bool = False):
   auto_test_job = AutoTestJob(projects, timeoutInSeconds, shouldClean, enableAsan, enableUbsan, enableCodeCoverage)
   return auto_test_job.execute(singleThreaded)
+
+# Creating new projects
+class TestProjectType(Enum):
+  UnitTest = 0,
+  AutoTest = auto(),
+  FuzzyTest = auto(),
+
+def create_new_project(solutionFolder : str, project : str, projectType : TestProjectType):
+  if projectType == TestProjectType.UnitTest:
+    sharpmake_file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_unit_test_template.sharpmake.cs')
+    file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_unit_test_template.cpp')
+  if projectType == TestProjectType.FuzzyTest:
+    sharpmake_file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_fuzzy_test_template.sharpmake.cs')
+    file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_fuzzy_test_template.cpp')
+  if projectType == TestProjectType.AutoTest:
+    sharpmake_file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_auto_test_template.sharpmake.cs')
+    file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_auto_test_entry_template.cpp')
+
+  # first make the directory that'll hold all the project's source files
+  project_folder = regis.util.to_snakecase(project)
+  project = regis.util.to_camelcase(project)
+  project_dir = os.path.join(root_path, 'tests', solutionFolder, project_folder)
+  if os.path.isdir(project_dir):
+    regis.diagnostics.log_err(f'project directory "{project_dir}" already exists.')
+    return
+
+  os.makedirs(project_dir)
+  regis.diagnostics.log_info(f'project dir created at {project_dir}')
+
+  # create the sub directories for the source files
+  os.mkdir(os.path.join(project_dir, 'include'))
+  os.mkdir(os.path.join(project_dir, 'config'))
+  os.mkdir(os.path.join(project_dir, 'src'))
+
+  # create the sharpmake file
+  test_sharpmake_file = os.path.join(project_dir, f'{project_folder}.sharpmake.cs')
+  sharpmake_content = open(sharpmake_file_template).read()
+  sharpmake_content = sharpmake_content.replace('<UnitTestProjectName>', project)
+  sharpmake_content = sharpmake_content.replace('<test_solution_folder>', solutionFolder)
+  open(test_sharpmake_file, 'w').write(sharpmake_content)
+
+  # copy the test template
+  test_file = os.path.join(project_dir, 'src', f'{project_folder}.cpp')
+  shutil.copy(file_template, test_file)  
+
+  # for auto tests we need to copy a template of an auto test file as well
+  if projectType == TestProjectType.AutoTest:
+    file_template = os.path.join(root_path, '_build', 'sharpmake', 'templates', 'rex_auto_test_template.cpp')
+    auto_test_file = os.path.join(project_dir, 'src', f'{project_folder}_test.cpp')
+    shutil.copy(file_template, auto_test_file)  
