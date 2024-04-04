@@ -5,6 +5,7 @@ import sys
 import time
 import itertools
 import threading
+import re
 from pathlib import Path
 import regis.diagnostics
 import regis.rex_json
@@ -246,5 +247,10 @@ class LoadingAnimation():
        self.done = True
        self.thread.join()
 
+def to_camelcase(input : str):
+    # We capitalize the first letter of each component except the first one
+    # with the 'capitalize' method and join them together.
+    return "".join(x.capitalize() for x in input.lower().split("_"))
 
-   
+def to_snakecase(input : str):
+  return re.sub(r'(?<!^)(?=[A-Z])', '_', input).lower()
