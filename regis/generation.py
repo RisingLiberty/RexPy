@@ -48,7 +48,7 @@ def _scan_for_sharpmake_files(settings : dict):
   it searches for all the sharpmake files in the sharpmake root, source folder and test folder.
   all searches are done recursively.
   """
-  sharpmake_root = os.path.join(root, "_build", "sharpmake")
+  sharpmake_root = os.path.join(root, "_build", "sharpmake", "src")
   source_root = os.path.join(root, settings["source_folder"])
   tests_root = os.path.join(root, settings["tests_folder"])
   
