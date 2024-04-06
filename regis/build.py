@@ -31,7 +31,7 @@ class NinjaProject:
   def dependencies(self, compiler : str, config : str):
     return self.json_blob['configs'][compiler.lower()][config.lower()]["dependencies"]
 
-  def clean(self, compiler : str, config : str, buildDependencies : bool):
+  def clean(self, compiler : str, config : str, buildDependencies : bool, verboseOutput = False):
     ninja_path = tool_paths_dict["ninja_path"]
     regis.diagnostics.log_info(f'Cleaning intermediates')
     
@@ -40,15 +40,20 @@ class NinjaProject:
       return r
 
     if buildDependencies:
-      self._clean_dependencies(compiler, config)
+      self._clean_dependencies(compiler, config, verboseOutput)
 
-    proc = regis.subproc.run(f"{ninja_path} -f {self.ninja_file(compiler, config)} -t clean")
+    cmd = f"{ninja_path} -f {self.ninja_file(compiler, config)} -t clean"
+
+    if verboseOutput:
+      cmd += ' -v'
+
+    proc = regis.subproc.run(cmd)
     proc.wait()
 
     r = proc.returncode
     return r
   
-  def build(self, compiler : str, config : str, buildDependencies : bool):
+  def build(self, compiler : str, config : str, buildDependencies : bool, verboseOutput = False):
     r = 0
 
     r = self._valid_args_check(compiler, config)
@@ -57,13 +62,17 @@ class NinjaProject:
 
     # make sure to build the dependencies first
     if buildDependencies:
-      r |= self._build_dependencies(compiler, config)
+      r |= self._build_dependencies(compiler, config, verboseOutput)
 
     regis.diagnostics.log_info(f"Building: {self.project_name} - {config} - {compiler}")
 
     # then build the project we specified
     ninja_path = tool_paths_dict["ninja_path"]
     cmd = f"{ninja_path} -f {self.ninja_file(compiler, config)}"
+
+    if verboseOutput:
+      cmd += ' -v'
+
     regis.diagnostics.log_info(f'executing: {cmd}')
     proc = regis.subproc.run(cmd)
     proc.wait()
@@ -102,7 +111,7 @@ class NinjaProject:
     
     return 0
 
-  def _build_dependencies(self, compiler, config):
+  def _build_dependencies(self, compiler, config, verboseOutput):
     dependencies = self.json_blob['configs'][compiler][config]["dependencies"]
 
     r = 0
@@ -111,11 +120,11 @@ class NinjaProject:
       regis.diagnostics.log_info(f'Building dependency: {self.project_name} -> {dependency_project_name}')
 
       dependency_project = NinjaProject(dependency)
-      r |= dependency_project.build(compiler, config, buildDependencies=True)
+      r |= dependency_project.build(compiler, config, buildDependencies=True, verboseOutput=verboseOutput)
 
     return r
 
-  def _clean_dependencies(self, compiler, config):
+  def _clean_dependencies(self, compiler, config, verboseOutput):
     dependencies = self.json_blob['configs'][compiler][config]["dependencies"]
 
     r = 0
@@ -124,7 +133,7 @@ class NinjaProject:
       regis.diagnostics.log_info(f'Building dependency: {self.project_name} -> {dependency_project_name}')
 
       dependency_project = NinjaProject(dependency)
-      r |= dependency_project.clean(compiler, config, buildDependencies=True)
+      r |= dependency_project.clean(compiler, config, buildDependencies=True, verboseOutput=verboseOutput)
 
     return r
 
@@ -157,7 +166,7 @@ def _find_ninja_project_file(slnFile : str, projectName : str):
   project_file_path = sln_jsob_blob[projectName]    
   return NinjaProject(project_file_path)
 
-def _launch_new_build(project : NinjaProject, config : str, compiler : str, shouldBuild : bool, shouldClean : bool, buildDependencies = False):
+def _launch_new_build(project : NinjaProject, config : str, compiler : str, shouldBuild : bool, shouldClean : bool, buildDependencies = False, verboseOutput = False):
   """Load the solution, look for the project in the solution and build it"""
   compiler_lower = compiler.lower()
   config_lower = config.lower()
@@ -165,10 +174,10 @@ def _launch_new_build(project : NinjaProject, config : str, compiler : str, shou
   r = 0
 
   if shouldClean:
-    r |= project.clean(compiler_lower, config_lower, buildDependencies)
+    r |= project.clean(compiler_lower, config_lower, buildDependencies, verboseOutput)
 
   if shouldBuild:
-    r |= project.build(compiler_lower, config_lower, buildDependencies)
+    r |= project.build(compiler_lower, config_lower, buildDependencies, verboseOutput)
 
   return r
 
@@ -246,7 +255,7 @@ def _update_build_projects(project : str, config : str, compiler : str, createdP
 
   regis.rex_json.save_file(build_projects_path, build_projects)
 
-def new_build(projectName : str, config : str, compiler : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False):
+def new_build(projectName : str, config : str, compiler : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False, verboseOutput : bool = False):
   """This is the interface to the build pipeline.\n
   It'll launch a new build for the project using the config and compiler specified.\n
   It's possible to to negate building and only clean or to do a clean step before the build starts.\n
@@ -259,7 +268,7 @@ def new_build(projectName : str, config : str, compiler : str, shouldBuild : boo
   
   project = _find_ninja_project_file(slnFile, projectName)
   with regis.dir_watcher.DirWatcher(intermediate_path, bRecursive=True) as dir_watcher:
-    res = _launch_new_build(project, config, compiler, shouldBuild, shouldClean, buildDependencies)
+    res = _launch_new_build(project, config, compiler, shouldBuild, shouldClean, buildDependencies, verboseOutput)
 
   if not os.path.exists(build_projects_path):
     regis.rex_json.save_file(build_projects_path, {})
@@ -275,7 +284,7 @@ def new_build(projectName : str, config : str, compiler : str, shouldBuild : boo
 
   return res
   
-def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False, singleThreaded : bool = True):
+def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False, singleThreaded : bool = True, verboseOutput : bool = False):
   slnFile = _look_for_sln_file_to_use(slnFile)
 
   if slnFile == "":
@@ -288,7 +297,7 @@ def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool 
   # This is the list that'll store the results of each build
   result_arr = []
   def _build_on_thread(prj, cfg, comp, result):
-    result.append(_launch_new_build(prj, cfg, comp, shouldBuild, shouldClean, buildDependencies))
+    result.append(_launch_new_build(prj, cfg, comp, shouldBuild, shouldClean, buildDependencies, verboseOutput))
 
   threads : list[threading.Thread] = []
   
