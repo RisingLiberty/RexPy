@@ -284,7 +284,7 @@ def new_build(projectName : str, config : str, compiler : str, shouldBuild : boo
 
   return res
   
-def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False, singleThreaded : bool = True, verboseOutput : bool = False):
+def build_all_configs(projectName : str, shouldBuild : bool = False, shouldClean : bool = False, slnFile : str = "", buildDependencies : bool = False, singleThreaded : bool = True, verboseOutput : bool = False):
   slnFile = _look_for_sln_file_to_use(slnFile)
 
   if slnFile == "":
@@ -292,7 +292,7 @@ def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool 
     return 1
   
   project = _find_ninja_project_file(slnFile, projectName)
-  configs = project.compilers()
+  compilers = project.compilers()
 
   # This is the list that'll store the results of each build
   result_arr = []
@@ -302,8 +302,8 @@ def build_all(projectName : str, shouldBuild : bool = False, shouldClean : bool 
   threads : list[threading.Thread] = []
   
   # loop over the configs and compilers and create a build for each combination
-  for compiler in configs:
-    for config in configs[compiler]:
+  for compiler in compilers:
+    for config in compilers[compiler]:
       thread = threading.Thread(target=_build_on_thread, args=(project, config, compiler, result_arr))
       thread.start()
 

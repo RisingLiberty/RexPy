@@ -890,7 +890,7 @@ def _build_files(projectsToBuild : list[str] = "", singleThreaded : bool = False
 
   # loop over the projects create a build for each combination
   for project in projectsToBuild:
-    res |= regis.build.build_all(project, shouldBuild=True, shouldClean=False, buildDependencies=True, singleThreaded=singleThreaded)
+    res |= regis.build.build_all_configs(project, shouldBuild=True, shouldClean=False, buildDependencies=True, singleThreaded=singleThreaded)
 
   return res
 
