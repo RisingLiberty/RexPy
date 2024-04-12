@@ -20,13 +20,28 @@ tool_paths_dict = regis.rex_json.load_file(tool_paths_filepath)
 
 def _find_sharpmake_files(directory):
   sharpmakes_files = []
-  for root, dirs, files in os.walk(directory):
+  for root, dirs, files in os.walk(directory):      
+    cs_files = []
+    sharpmake_file_found = False
     for file in files:
       extensions = Path(file).suffixes
+      path = os.path.join(root, file)
       if len(extensions) == 2:
         if extensions[0] == ".sharpmake" and extensions[1] == ".cs":
-          path = os.path.join(root, file)
           sharpmakes_files.append(path)
+          sharpmake_file_found = True
+      if len(extensions) == 1:
+        if extensions[0] == ".cs":
+          cs_files.append(path)
+
+    if 'include' in dirs and 'src' in dirs:
+      if len(cs_files) and sharpmake_file_found == False:
+        regis.diagnostics.log_warn(f'Expected sharpmake files at "{root}" but none were found')
+        regis.diagnostics.log_warn(f'Possible sharpmake files..')
+        for cs_file in cs_files:
+          regis.diagnostics.log_warn(f'- {cs_file}')
+        
+        regis.diagnostics.log_warn(f'A sharpmake file should end with ".sharpmake.cs", please rename the extension of your sharpmake files.')
   
   return sharpmakes_files
 
