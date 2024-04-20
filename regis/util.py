@@ -127,7 +127,7 @@ def find_in_parent(path, toFind):
 
     curr_path = Path(curr_path).parent
 
-  return curr_path
+  return curr_path.__str__()
 
 def find_root():
   res = find_in_parent(os.getcwd(), "source")
@@ -254,3 +254,11 @@ def to_camelcase(input : str):
 
 def to_snakecase(input : str):
   return re.sub(r'(?<!^)(?=[A-Z])', '_', input).lower()
+
+def ask_yesno(question : str):
+   answer = input(f'{question}\n')
+   if answer.lower() == 'y' or answer.lower() == 'yes':
+      return True
+   
+   return False
+   

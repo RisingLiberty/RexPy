@@ -104,3 +104,8 @@ def remove_stash(stashName):
   cmd = f"git stash drop {stash_idx}"
   output, errc = regis.util.run_and_get_output(cmd)
   regis.diagnostics.log_no_color(output)
+
+def pull():
+  cmd = 'git pull'
+  output, errc = regis.util.run_and_get_output(cmd)
+  regis.diagnostics.log_no_color(output)

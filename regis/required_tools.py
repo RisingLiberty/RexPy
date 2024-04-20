@@ -144,7 +144,7 @@ def __look_for_tools(required_tools):
 
   return not_found_tools
 
-def are_installed():
+def _are_installed():
   with regis.task_raii_printing.TaskRaiiPrint("Checking if tools are installed"):
 
     global required_tools
@@ -267,14 +267,14 @@ def __launch_download_thread(url):
     thread.start()
     return thread  
 
-def download():
+def _download():
   with regis.task_raii_printing.TaskRaiiPrint("Downloading tools"):
     __make_zip_download_path()
     __download_tools_archive()
     __unzip_tools()
     __delete_tmp_folders()
 
-def install():
+def _install():
   with regis.task_raii_printing.TaskRaiiPrint("installing tools"):
 
     global tool_paths_dict
@@ -304,16 +304,10 @@ def install():
 
 def query():
   """Query which required tools are still missing on the current machine."""
-  are_installed()
+  return _are_installed()
 
-def run():
-  if not are_installed():
-    download()
-    install()
-
-if __name__ == "__main__":
-  parser = argparse.ArgumentParser()
-  args, unknown = parser.parse_known_args()
-
-  run()
+def install():
+  if not _are_installed():
+    _download()
+    _install()
 

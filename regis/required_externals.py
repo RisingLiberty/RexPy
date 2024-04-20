@@ -18,7 +18,7 @@ class Host(Enum):
     GITLAB = 1
     GITHUB = 2
 
-def __get_host(path):
+def _get_host(path):
     if "gitlab" in path:
         return Host.GITLAB
     elif "github" in path:
@@ -27,31 +27,31 @@ def __get_host(path):
     regis.diagnostics.log_info("Unknown host!")
     return Host.UNKNOWN
 
-def __build_gitlab_path(baseUrl, name, tag):
+def _build_gitlab_path(baseUrl, name, tag):
     url = os.path.join(baseUrl, "-")
     url = os.path.join(url, "archive")
     url = os.path.join(url, tag)
     url = os.path.join(url, name+"-"+tag+".zip")
     url = url.replace("\\", "/")
     return url
-def __build_github_path(baseUrl, tag):
+def _build_github_path(baseUrl, tag):
     url = os.path.join(baseUrl, "archive")
     url = os.path.join(url, "refs")
     url = os.path.join(url, "tags")
     url = os.path.join(url, tag+".zip")
     url = url.replace("\\", "/")
     return url
-def __build_host_path(baseUrl, name, tag):
-    host = __get_host(baseUrl)
+def _build_host_path(baseUrl, name, tag):
+    host = _get_host(baseUrl)
     if host == Host.GITHUB:
-        return __build_github_path(baseUrl, tag)
+        return _build_github_path(baseUrl, tag)
     elif host == Host.GITLAB:
-        return __build_gitlab_path(baseUrl, name, tag)
+        return _build_gitlab_path(baseUrl, name, tag)
     else:
         regis.diagnostics.log_err(f"Unknown url host: {host} in url: {baseUrl}")
         return ""
 
-def __load_externals_required():
+def _load_externals_required():
     json_blob = regis.rex_json.load_file(os.path.join(root, "_build", "config", "required_externals.json"))
     if json_blob == None:
         regis.diagnostics.log_err("Loaded json blob is None, stopping json parse")
@@ -63,7 +63,7 @@ def __load_externals_required():
 
     return externals_required
 
-def __download_external(url):
+def _download_external(url):
     # create temporary directory to store cached files to
     if not os.path.exists(temp_dir):
         regis.diagnostics.log_info(f'creating: {temp_dir}')
@@ -113,7 +113,7 @@ def __download_external(url):
 
     return added_directory_names
 
-def __verify_external(externalPath, requiredTag):
+def _verify_external(externalPath, requiredTag):
     external_name = os.path.basename(externalPath)
 
     if os.path.exists(externalPath):
@@ -129,7 +129,7 @@ def __verify_external(externalPath, requiredTag):
     else:
         return False
 
-def __install_external(external):
+def _install_external(external):
     with regis.task_raii_printing.TaskRaiiPrint("Installing externals.."):
         external_url = external["url"]
         external_name = external["name"]
@@ -140,15 +140,15 @@ def __install_external(external):
         externals_dir = os.path.join(external_store, external_name)
 
         # if the external is already present we need to check if we need to redownload anything
-        valid_external = __verify_external(externals_dir, external_tag)
+        valid_external = _verify_external(externals_dir, external_tag)
         if not valid_external:    
             # any data that was already available will be deleted 
             # the data will be out of date anyway when a download is triggered
             if os.path.exists(externals_dir):
                 shutil.rmtree(externals_dir)
 
-            url = __build_host_path(external_url, external_name, external_tag)
-            added_directories = __download_external(url)     
+            url = _build_host_path(external_url, external_name, external_tag)
+            added_directories = _download_external(url)     
 
             if len(added_directories) == 1:
                 # move to output directory
@@ -171,16 +171,17 @@ def __install_external(external):
 
             regis.util.create_version_file(externals_dir, external_tag)   
 
-def __remove_tmp_dir():
+def _remove_tmp_dir():
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
 
 def query():
-    externals_required = __load_externals_required()
+    externals_required = _load_externals_required()
     if externals_required == None:
         regis.diagnostics.log_err("Required externals is None, exiting ...")
-        return
+        return False
     
+    res = True
     for external in externals_required:
 
         external_tag = external["tag"]
@@ -189,15 +190,17 @@ def query():
         external_store = external_store.replace("~", root)
         externals_dir = os.path.join(external_store, external_name)
 
-        __verify_external(externals_dir, external_tag)
+        res &= _verify_external(externals_dir, external_tag)
 
-def run():
-    externals_required = __load_externals_required()
+    return res
+
+def install():
+    externals_required = _load_externals_required()
     if externals_required == None:
         regis.diagnostics.log_err("Required externals is None, exiting ...")
         return
 
     for external in externals_required:
-        __install_external(external)    
+        _install_external(external)    
 
-    __remove_tmp_dir()
+    _remove_tmp_dir()
