@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import regis.required_tools
 import regis.rex_json
@@ -267,6 +268,10 @@ def new_build(projectName : str, config : str, compiler : str, shouldBuild : boo
     return 1
   
   project = _find_ninja_project_file(slnFile, projectName)
+  if not project:
+    regis.diagnostics.log_err(f'Failed to find {projectName} in solution')
+    sys.exit(1)
+
   with regis.dir_watcher.DirWatcher(intermediate_path, bRecursive=True) as dir_watcher:
     res = _launch_new_build(project, config, compiler, shouldBuild, shouldClean, buildDependencies, verboseOutput)
 
