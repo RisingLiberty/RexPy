@@ -11,6 +11,7 @@
 # This script is specifically designed to all required libraries for Rex.
 
 import os
+import sys
 import regis.task_raii_printing
 import regis.util
 import regis.rex_json
@@ -149,8 +150,12 @@ def _unzip_lib(name):
             with open(lib_zip, "rb") as z:
                 f.write(z.read())
 
-        with zipfile.ZipFile(lib_master_zip, "r") as zip_obj:
-            zip_obj.extractall(libs_install_dir)
+        try:
+          with zipfile.ZipFile(lib_master_zip, "r") as zip_obj:
+              zip_obj.extractall(libs_install_dir)
+        except zipfile.BadZipFile as ex:
+          regis.diagnostics.log_err(f'Unable to extract {lib_master_zip}. {ex}')
+          sys.exit(1)
 
       regis.diagnostics.log_info(f"libs unzipped to {libs_install_dir}")
 
@@ -215,8 +220,10 @@ def _are_installed():
 def _download():
   # create the temporary path for zips
   if not os.path.exists(zip_downloads_path):
-      os.makedirs(zip_downloads_path)
-
+    os.makedirs(zip_downloads_path)
+  else:
+    shutil.rmtree(zip_downloads_path)
+    
   # filter duplicate tools
   libs_to_download = []
   for not_found_tool in not_found_libs:

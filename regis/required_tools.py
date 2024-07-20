@@ -1,5 +1,5 @@
 import os
-import copy
+import sys
 import regis.rex_json
 import regis.util
 import regis.task_raii_printing
@@ -249,8 +249,12 @@ def __unzip_tools():
             with open(tool_zip, "rb") as z:
                 f.write(z.read())
 
-        with zipfile.ZipFile(tool_master_zip, "r") as zip_obj:
-            zip_obj.extractall(tools_install_dir)
+        try:
+          with zipfile.ZipFile(tool_master_zip, "r") as zip_obj:
+              zip_obj.extractall(tools_install_dir)
+        except zipfile.BadZipFile as ex:
+          regis.diagnostics.log_err(f'Unable to extract {tool_master_zip}. {ex}')
+          sys.exit(1)
 
       regis.diagnostics.log_info(f"tools unzipped to {tools_install_dir}")
 
@@ -269,6 +273,7 @@ def __launch_download_thread(url):
 
 def _download():
   with regis.task_raii_printing.TaskRaiiPrint("Downloading tools"):
+    __delete_tmp_folders() # clean up if last job failed
     __make_zip_download_path()
     __download_tools_archive()
     __unzip_tools()
