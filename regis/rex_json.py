@@ -7,9 +7,13 @@ def load_file(path):
     regis.diagnostics.log_err(f"Failed to load json, file does not exist '{path}'")
     return None
 
-  f = open(path)
-  data = json.load(f)
-  return data
+  try:
+    f = open(path)
+    data = json.load(f)
+    return data
+  except json.decoder.JSONDecodeError as ex:
+    regis.diagnostics.log_err(f'Failed to decode json: {ex}')
+    return {}
 
 def save_file(path : str, data):
   f = open(path, "w")
