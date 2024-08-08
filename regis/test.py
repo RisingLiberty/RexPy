@@ -185,11 +185,13 @@ class Runnable():
     # UBSAN_OPTIONS common flags: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
     log_folder = os.path.join(root_path, settings["intermediate_folder"], settings["logs_folder"])
     
+    asan_log_path = ''
     if self.enable_asan:
       asan_log_path = os.path.join(log_folder, 'asan.log').replace('\\', '/')
       asan_options = f"print_stacktrace=1:log_path=\"{asan_log_path}\""
       os.environ["ASAN_OPTIONS"] = asan_options # print callstacks and save to log file
 
+    ubsan_log_path = ''
     if self.enable_ubsan:
       ubsan_log_path = os.path.join(log_folder, 'ubsan.log').replace('\\', '/')
       ubsan_options = f"print_stacktrace=1:log_path=\"{ubsan_log_path}\""
@@ -197,7 +199,7 @@ class Runnable():
     
     self.proc = regis.util.run_subprocess(self.program, self.args)
     new_rc = regis.util.wait_for_process(self.proc)
-    if new_rc != 0 or os.path.exists(asan_log_path) or os.path.exists(ubsan_log_path):
+    if new_rc != 0 or (asan_log_path and os.path.exists(asan_log_path)) or (ubsan_log_path and os.path.exists(ubsan_log_path)):
       regis.diagnostics.log_err(f"sanitization failed for {self.program}") # use full path to avoid ambiguity
       regis.diagnostics.log_err(f"for more info regarding asan, please check: {asan_log_path}")
       regis.diagnostics.log_err(f"for more info regarding ubsan, please check: {ubsan_log_path}")
