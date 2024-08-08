@@ -129,8 +129,8 @@ def find_in_parent(path, toFind):
 
   return curr_path.__str__()
 
-def find_root():
-  res = find_in_parent(os.getcwd(), "source")
+def find_root(startPath = os.getcwd()):
+  res = find_in_parent(startPath, "source")
   if (res == ''):
     regis.diagnostics.log_err(f"root not found")
 
