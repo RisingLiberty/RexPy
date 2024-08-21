@@ -264,7 +264,8 @@ def __create_version_files(foundTools : []):
     regis.util.create_version_file(path, tool["version"])
 
 def __delete_tmp_folders():
-  shutil.rmtree(zip_downloads_path)
+  if os.path.isdir(zip_downloads_path):
+    shutil.rmtree(zip_downloads_path)
 
 def __launch_download_thread(url):
     thread = threading.Thread(target=__download_file, args=(url,))
